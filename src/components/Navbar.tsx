@@ -37,13 +37,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <BrainCircuit className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className="text-xl font-bold tracking-tight text-slate-900">
                   Quizify <span className="text-emerald-600">AI</span>
                 </span>
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   HSC & Admission 🇧🇩
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  Gemini AI Active
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block font-bengali">

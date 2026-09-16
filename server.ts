@@ -16,32 +16,43 @@ async function generateContentWithFallback(
   requestParams: {
     contents: any;
     config?: any;
-  }
+  },
+  timeoutMs = 28000
 ) {
-  // Ordered by preference; if a model has high demand (503), immediately try next
+  // Primary model is gemini-3.1-flash-lite (fastest, high uptime, accurate OCR & LaTeX)
+  // Fallbacks: gemini-3.1-flash-lite-preview, gemini-flash-latest, gemini-3.8-flash
   const candidateModels = [
-    "gemini-3.8-flash",
     "gemini-3.1-flash-lite",
+    "gemini-3.1-flash-lite-preview",
     "gemini-flash-latest",
+    "gemini-3.8-flash",
   ];
 
   let lastError: any = null;
 
   for (const model of candidateModels) {
     for (let attempt = 1; attempt <= 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
       try {
         console.log(`[AI] Invoking model '${model}' (attempt ${attempt})...`);
         const response = await ai.models.generateContent({
           model,
           contents: requestParams.contents,
-          config: requestParams.config,
+          config: {
+            ...requestParams.config,
+            abortSignal: controller.signal,
+          },
         });
+        clearTimeout(timer);
 
         if (response && response.text) {
           console.log(`[AI] Success with model '${model}' on attempt ${attempt}`);
           return { response, usedModel: model };
         }
       } catch (err: any) {
+        clearTimeout(timer);
         lastError = err;
         const msg = err?.message || String(err);
         console.warn(`[AI] Model '${model}' attempt ${attempt} failed: ${msg}`);
@@ -52,14 +63,15 @@ async function generateContentWithFallback(
           msg.includes("UNAVAILABLE") ||
           msg.includes("429") ||
           msg.includes("RESOURCE_EXHAUSTED") ||
+          msg.includes("aborted") ||
           err?.status === 503 ||
           err?.status === 429;
 
         if (isTransient && attempt === 1) {
-          // Wait 1.2s before retry with same model
-          await new Promise((resolve) => setTimeout(resolve, 1200));
+          // Quick wait before retry
+          await new Promise((resolve) => setTimeout(resolve, 800));
         } else {
-          // Move to next candidate model
+          // Immediately move to next fallback model
           break;
         }
       }
@@ -73,11 +85,14 @@ function parseAndCleanErrorMessage(error: any): string {
   if (!error) return "অপ্রত্যাশিত কোনো ত্রুটি হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।";
   const raw = typeof error === "string" ? error : error.message || JSON.stringify(error);
 
+  if (raw.includes("aborted") || raw.includes("timeout")) {
+    return "AI প্রসেসিংয়ে কিছুটা বেশি সময় নিয়েছে। অনুগ্রহ করে 'পুনরায় চেষ্টা করুন' বাটনে চাপ দিন।";
+  }
   if (raw.includes("503") || raw.includes("high demand") || raw.includes("UNAVAILABLE")) {
-    return "AI মডেলে এই মুহূর্তে সাময়িক অতিরিক্ত ট্রাফিকের চাপ রয়েছে (503 High Demand)। অনুগ্রহ করে নিচে 'আবার চেষ্টা করুন' বাটনে চাপ দিন।";
+    return "AI সার্ভারে সাময়িক ট্রাফিকের চাপ রয়েছে (503 High Demand)। কয়েক সেকেন্ড পর নিচে 'পুনরায় চেষ্টা করুন' বাটনে চাপ দিন।";
   }
   if (raw.includes("429") || raw.includes("RESOURCE_EXHAUSTED") || raw.includes("quota")) {
-    return "API অনুরোধের সীমা সাময়িকভাবে অতিক্রান্ত হয়েছে। ১-২ মিনিট অপেক্ষা করে আবার চেষ্টা করুন।";
+    return "অনুরোধের সীমা সাময়িকভাবে অতিক্রান্ত হয়েছে। ১ মিনিট অপেক্ষা করে আবার চেষ্টা করুন।";
   }
   if (raw.includes("Could not parse JSON")) {
     return "ছবি থেকে প্রশ্ন বিন্যাস করতে সমস্যা হয়েছে। অনুগ্রহ করে স্পষ্ট আলোযুক্ত সোজা ছবি আপলোড করুন।";
@@ -106,6 +121,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "Quizify AI Bangladesh Backend",
+    aiConfigured: Boolean(process.env.GEMINI_API_KEY),
     timestamp: new Date().toISOString(),
   });
 });

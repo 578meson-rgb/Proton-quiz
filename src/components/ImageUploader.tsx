@@ -50,18 +50,76 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
 
-  const processFile = (file: File) => {
+  const compressAndResizeImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => {
+        const fallbackReader = new FileReader();
+        fallbackReader.onload = () => resolve(fallbackReader.result as string);
+        fallbackReader.readAsDataURL(file);
+      };
+
+      img.onload = () => {
+        // High resolution limit (2048px) ensures all Bengali accents, math subscripts, and chemical bonds remain crystal sharp
+        const MAX_DIM = 2048;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(img.src);
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Compress high-res mobile photos from ~12MB down to ~350KB for fast AI transmission
+        const compressed = canvas.toDataURL('image/jpeg', 0.88);
+        resolve(compressed);
+      };
+
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const processFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       setErrorMsg('অনুগ্রহ করে একটি বৈধ ইমেজ ফাইল (JPG, PNG, WebP) নির্বাচন করুন।');
       return;
     }
     setErrorMsg(null);
     setSelectedFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreviewUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+
+    try {
+      const optimized = await compressAndResizeImage(file);
+      setPreviewUrl(optimized);
+    } catch {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
