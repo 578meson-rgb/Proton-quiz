@@ -1,0 +1,6 @@
+{
+  "name": "Quizify AI - Bangladeshi MCQ Exam Generator",
+  "description": "Intelligent MCQ exam generator for Bangladeshi HSC and Admission students that converts question photos into real interactive CBT exams.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

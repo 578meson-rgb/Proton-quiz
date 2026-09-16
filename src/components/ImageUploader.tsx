@@ -1,0 +1,465 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  Upload, 
+  Camera, 
+  Sparkles, 
+  FileText, 
+  AlertCircle, 
+  CheckCircle2, 
+  ArrowRight,
+  ShieldCheck,
+  Zap,
+  BookMarked,
+  Eraser,
+  Eye
+} from 'lucide-react';
+import { SubjectType, MCQQuestion } from '../types';
+import { SAMPLE_PACKS } from '../data/sampleQuestions';
+
+interface ImageUploaderProps {
+  onExtractionSuccess: (questions: MCQQuestion[], subject: SubjectType, rawImage?: string) => void;
+  onSelectSamplePack: (packId: string) => void;
+}
+
+export const ImageUploader: React.FC<ImageUploaderProps> = ({
+  onExtractionSuccess,
+  onSelectSamplePack,
+}) => {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [subjectHint, setSubjectHint] = useState<string>('Auto-detect');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [currentStep, setCurrentStep] = useState<number>(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Clipboard paste support (e.g. Ctrl+V screenshots)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (e.clipboardData && e.clipboardData.files.length > 0) {
+        const file = e.clipboardData.files[0];
+        if (file.type.startsWith('image/')) {
+          processFile(file);
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  const processFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('অনুগ্রহ করে একটি বৈধ ইমেজ ফাইল (JPG, PNG, WebP) নির্বাচন করুন।');
+      return;
+    }
+    setErrorMsg(null);
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleStartExtraction = async () => {
+    if (!previewUrl) {
+      setErrorMsg('প্রথমে একটি প্রশ্নপত্রের ছবি আপলোড করুন অথবা ক্যামেরা দিয়ে ছবি তুলুন।');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    setCurrentStep(1);
+
+    // Simulated progress steps for smooth user feedback
+    const stepTimer1 = setTimeout(() => setCurrentStep(2), 1200);
+    const stepTimer2 = setTimeout(() => setCurrentStep(3), 2800);
+    const stepTimer3 = setTimeout(() => setCurrentStep(4), 4500);
+
+    try {
+      const response = await fetch('/api/extract-mcq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: previewUrl,
+          mimeType: selectedFile?.type || 'image/jpeg',
+          subjectHint: subjectHint === 'Auto-detect' ? undefined : subjectHint,
+        }),
+      });
+
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'MCQ এক্সট্রাকশন সম্পন্ন করা সম্ভব হয়নি। আবার চেষ্টা করুন।');
+      }
+
+      const data = await response.json();
+      if (!data.questions || data.questions.length === 0) {
+        throw new Error('ছবিটিতে কোনো স্পষ্ট MCQ প্রশ্ন সনাক্ত করা যায়নি। অনুগ্রহ করে স্পষ্ট আলোর ছবি আপলোড করুন।');
+      }
+
+      onExtractionSuccess(data.questions, data.detectedSubject || 'Physics', previewUrl);
+    } catch (err: any) {
+      console.error('Extraction error:', err);
+      let rawMsg = err?.message || 'সার্ভার সংযোগে ত্রুটি হয়েছে।';
+      
+      // Parse nested JSON if present
+      try {
+        const jsonMatch = rawMsg.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.error?.message) {
+            rawMsg = parsed.error.message;
+          } else if (parsed.error) {
+            rawMsg = parsed.error;
+          }
+        }
+      } catch {
+        // Ignored
+      }
+
+      if (rawMsg.includes('503') || rawMsg.includes('high demand') || rawMsg.includes('UNAVAILABLE')) {
+        rawMsg = 'AI মডেলে সাময়িক অতিরিক্ত ট্রাফিকের চাপ ছিল (503 High Demand)। সার্ভারে ব্যাকআপ মডেল প্রস্তুত আছে, অনুগ্রহ করে "পুনরায় চেষ্টা করুন" বাটনে ক্লিক করুন।';
+      }
+
+      setErrorMsg(rawMsg);
+    } finally {
+      setIsLoading(false);
+      setCurrentStep(0);
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
+      {/* Hero Header */}
+      <div className="text-center mb-8 sm:mb-10">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold mb-3">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+          <span>স্মার্ট বাংলাদেশি MCQ এক্সট্রাক্টর ও CBT ইঞ্জিন</span>
+        </div>
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight font-bengali">
+          প্রশ্নপত্রের ছবি তুলুন, সরাসরি দিন <span className="text-emerald-600">লাইভ CBT পরীক্ষা</span>
+        </h1>
+        <p className="mt-3 text-base sm:text-lg text-slate-600 max-w-2xl mx-auto font-bengali">
+          হাতে লেখা নোট, টিক মার্ক বা কাটাকুটি বাদ দিয়ে অবিকল বাংলা হরফ, গাণিতিক সমীকরণ ও রাসায়নিক সংকেত বজায় রেখে তৈরি করুন স্বয়ংক্রিয় কুইজ।
+        </p>
+
+        {/* Feature Badges */}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm text-slate-600">
+          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
+            <Eraser className="w-4 h-4 text-emerald-600" />
+            <span className="font-bengali">রাফ হিসাব ও টিক মার্ক ফিল্টার</span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
+            <Zap className="w-4 h-4 text-emerald-600" />
+            <span className="font-bengali">LaTeX ও রাসায়নিক সংকেত সংরক্ষণ</span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span className="font-bengali">নেগেটিভ মার্কিং সহ রিয়েল CBT</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Upload / Drag & Drop Card */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+        {/* Subject Filter Bar */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <BookMarked className="w-4 h-4 text-emerald-600" />
+            <span className="font-bengali">বিষয় নির্বাচন (ঐচ্ছিক):</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { id: 'Auto-detect', label: 'অটো-ডিটেক্ট (সব বিষয়)' },
+              { id: 'Physics', label: 'পদার্থবিজ্ঞান' },
+              { id: 'Chemistry', label: 'রসায়ন' },
+              { id: 'Higher Math', label: 'উচ্চতর গণিত' },
+              { id: 'Biology', label: 'জীববিজ্ঞান' },
+              { id: 'Admission', label: 'ভর্তি প্রশ্নব্যাংক' },
+            ].map((sub) => (
+              <button
+                key={sub.id}
+                type="button"
+                onClick={() => setSubjectHint(sub.id)}
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors font-bengali ${
+                  subjectHint === sub.id
+                    ? 'bg-emerald-600 text-white font-medium'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {sub.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Upload Dropzone */}
+        {!previewUrl ? (
+          <div
+            id="dropzone-area"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-xl p-8 sm:p-12 text-center transition-all cursor-pointer ${
+              isDragOver
+                ? 'border-emerald-500 bg-emerald-50/50'
+                : 'border-slate-300 hover:border-emerald-400 bg-slate-50/50'
+            }`}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/png, image/jpeg, image/webp"
+              className="hidden"
+            />
+            <input
+              type="file"
+              ref={cameraInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+            />
+
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center shadow-xs">
+              <Upload className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-900 font-bengali">
+              এখানে প্রশ্নপত্রের ছবি ড্র্যাগ করুন অথবা ক্লিক করে ফাইল বাছুন
+            </h3>
+            <p className="mt-1 text-sm text-slate-500 font-bengali">
+              JPG, PNG, WebP সমর্থিত • কিবোর্ড থেকে সরাসরি স্ক্রিনশট পেস্ট (Ctrl+V) করতে পারেন
+            </p>
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                id="btn-upload-file"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-xs transition-colors flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                <span>ফাইল সিলেক্ট করুন</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-camera-capture"
+                onClick={() => cameraInputRef.current?.click()}
+                className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-sm font-medium shadow-xs transition-colors flex items-center gap-2"
+              >
+                <Camera className="w-4 h-4 text-emerald-600" />
+                <span>মোবাইল ক্যামেরা দিয়ে ছবি তুলুন</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Image Preview & Extraction Controls */
+          <div className="space-y-6">
+            <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5 max-h-[420px] flex items-center justify-center p-2">
+              <img
+                src={previewUrl}
+                alt="Uploaded Bangladeshi Exam Sheet"
+                className="max-h-[400px] w-auto object-contain rounded-lg shadow-xs"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewUrl(null);
+                  setSelectedFile(null);
+                  setErrorMsg(null);
+                }}
+                className="absolute top-4 right-4 bg-slate-900/80 hover:bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-sm backdrop-blur-xs transition-all font-bengali"
+              >
+                ছবি পরিবর্তন করুন
+              </button>
+            </div>
+
+            {/* Action Button & Extraction Pipeline Status */}
+            {!isLoading ? (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+                <div className="text-sm text-slate-600 font-bengali">
+                  নির্বাচিত বিষয়: <span className="font-semibold text-slate-800">{subjectHint}</span>
+                  {selectedFile && ` • আকার: ${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}
+                </div>
+
+                <button
+                  type="button"
+                  id="btn-start-extraction"
+                  onClick={handleStartExtraction}
+                  className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-2 text-base font-bengali"
+                >
+                  <Sparkles className="w-5 h-5 text-emerald-200" />
+                  <span>MCQ এক্সট্রাক্ট করুন ও CBT শুরু করুন</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              /* Animated Pipeline Progress */
+              <div className="py-6 px-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                <div className="text-center mb-5">
+                  <div className="inline-block animate-spin w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full mb-2"></div>
+                  <h4 className="text-base font-bold text-slate-900 font-bengali">
+                    Quizify AI প্রশ্নপত্র বিশ্লেষণ করছে...
+                  </h4>
+                  <p className="text-xs text-slate-500 font-bengali">
+                    উচ্চতর নিখুঁততার জন্য বাংলা টেক্সট ও LaTeX সমীকরণ নির্ভুলভাবে রূপান্তর করা হচ্ছে
+                  </p>
+                </div>
+
+                {/* Step Indicators */}
+                <div className="space-y-2.5 max-w-md mx-auto text-xs sm:text-sm">
+                  {[
+                    { step: 1, label: '১. বাংলা হরফ ও উদ্দীপক বিশ্লেষণ করা হচ্ছে' },
+                    { step: 2, label: '২. শিক্ষার্থীর রাফ নোট, পেন্সিলের দাগ ও ওয়াটারমার্ক অপসারণ' },
+                    { step: 3, label: '৩. পদার্থ ও গণিতের LaTeX সমীকরণ ও একক সংরক্ষণ' },
+                    { step: 4, label: '৪. স্ট্যান্ডার্ড CBT ডেটাবেজ ও নির্ভুল উত্তরপত্র তৈরি' },
+                  ].map((item) => (
+                    <div
+                      key={item.step}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all font-bengali ${
+                        currentStep > item.step
+                          ? 'bg-white text-emerald-700 font-medium shadow-2xs'
+                          : currentStep === item.step
+                          ? 'bg-emerald-600 text-white font-semibold shadow-xs'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      {currentStep > item.step ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      ) : currentStep === item.step ? (
+                        <div className="w-2 h-2 rounded-full bg-white animate-ping"></div>
+                      ) : (
+                        <div className="w-2 h-2 rounded-full bg-slate-300"></div>
+                      )}
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Error Alert with Actionable Retry */}
+        {errorMsg && (
+          <div className="mt-5 p-4 sm:p-5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-sm">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold font-bengali text-rose-900">এক্সট্রাকশনে সাময়িক বিঘ্ন ঘটেছে</p>
+                <p className="font-bengali text-rose-700 text-xs sm:text-sm mt-0.5">{errorMsg}</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              {previewUrl && (
+                <button
+                  type="button"
+                  id="btn-error-retry"
+                  onClick={handleStartExtraction}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg font-semibold text-xs sm:text-sm transition-all flex items-center gap-1.5 shadow-xs font-bengali"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>পুনরায় চেষ্টা করুন</span>
+                </button>
+              )}
+              <button
+                type="button"
+                id="btn-error-load-demo"
+                onClick={() => onSelectSamplePack('hsc-student-upload-mock')}
+                className="px-3 py-2 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-lg font-medium text-xs sm:text-sm transition-all font-bengali"
+              >
+                ডেমো টেস্ট দেখুন
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Built-in Sample Exam Question Packs for Instant Testing */}
+      <div className="mt-12">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-bengali">
+              অথবা সরাসরি ডেমো প্রশ্নপত্র দিয়ে টেস্ট করুন:
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 font-bengali">
+              বোর্ড পরীক্ষা ও ভর্তি পরীক্ষার আসল প্রশ্ন দিয়ে তাৎক্ষণিকভাবে সিবিটি সিস্টেম পরখ করুন
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+            {SAMPLE_PACKS.length} টি প্রস্তুতকৃত সেট
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {SAMPLE_PACKS.map((pack) => (
+            <div
+              key={pack.id}
+              id={`sample-card-${pack.id}`}
+              onClick={() => onSelectSamplePack(pack.id)}
+              className="group bg-white rounded-xl border border-slate-200 hover:border-emerald-500 hover:shadow-md transition-all p-4 cursor-pointer flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs mb-2">
+                  <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700">
+                    {pack.subject}
+                  </span>
+                  <span className="text-emerald-600 font-medium">
+                    {pack.questionCount} টি MCQ
+                  </span>
+                </div>
+                <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors text-sm font-bengali">
+                  {pack.nameBn}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 line-clamp-2 font-bengali">
+                  {pack.description}
+                </p>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-emerald-600 font-bengali">
+                <span>সিবিটি লোড করুন</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
