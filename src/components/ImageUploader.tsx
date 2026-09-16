@@ -52,76 +52,75 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
   const compressAndResizeImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
-      // 3.5s safety fallback: if image canvas decoding fails or hangs on certain mobile browsers, fallback to direct dataURL
-      const safetyTimer = setTimeout(() => {
-        const fallbackReader = new FileReader();
-        fallbackReader.onload = () => resolve((fallbackReader.result as string) || '');
-        fallbackReader.onerror = () => resolve('');
-        fallbackReader.readAsDataURL(file);
-      }, 3500);
-
-      const img = new Image();
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        img.src = (e.target?.result as string) || '';
-      };
-      reader.onerror = () => {
-        clearTimeout(safetyTimer);
-        const fallbackReader = new FileReader();
-        fallbackReader.onload = () => resolve((fallbackReader.result as string) || '');
-        fallbackReader.onerror = () => resolve('');
-        fallbackReader.readAsDataURL(file);
+      // Helper for FileReader fallback if ObjectURL or Image fails
+      const fallbackWithFileReader = () => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
       };
 
-      img.onerror = () => {
-        clearTimeout(safetyTimer);
-        const fallbackReader = new FileReader();
-        fallbackReader.onload = () => resolve((fallbackReader.result as string) || '');
-        fallbackReader.onerror = () => resolve('');
-        fallbackReader.readAsDataURL(file);
-      };
+      try {
+        // Fast Object URL decoding avoids allocating massive base64 strings in memory
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
 
-      img.onload = () => {
-        clearTimeout(safetyTimer);
-        try {
-          // High resolution limit (2048px) ensures all Bengali accents, math subscripts, and chemical bonds remain crystal sharp
-          const MAX_DIM = 2048;
-          let width = img.width;
-          let height = img.height;
+        // Safety timer: fallback after 2.5s
+        const safetyTimer = setTimeout(() => {
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+          fallbackWithFileReader();
+        }, 2500);
 
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width > height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
+        img.onload = () => {
+          clearTimeout(safetyTimer);
+          try {
+            URL.revokeObjectURL(objectUrl);
+            // 1400px max dimension: preserves crisp Bengali script & complex math without bloating payload
+            const MAX_DIM = 1400;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_DIM || height > MAX_DIM) {
+              if (width > height) {
+                height = Math.round((height * MAX_DIM) / width);
+                width = MAX_DIM;
+              } else {
+                width = Math.round((width * MAX_DIM) / height);
+                height = MAX_DIM;
+              }
             }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              fallbackWithFileReader();
+              return;
+            }
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Compress to ~150KB JPEG for sub-second network transfer and instant AI vision recognition
+            const compressed = canvas.toDataURL('image/jpeg', 0.82);
+            resolve(compressed);
+          } catch {
+            fallbackWithFileReader();
           }
+        };
 
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            resolve(img.src);
-            return;
-          }
+        img.onerror = () => {
+          clearTimeout(safetyTimer);
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+          fallbackWithFileReader();
+        };
 
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Compress high-res mobile photos from ~12MB down to ~350KB for fast AI transmission
-          const compressed = canvas.toDataURL('image/jpeg', 0.88);
-          resolve(compressed);
-        } catch {
-          resolve(img.src);
-        }
-      };
-
-      reader.readAsDataURL(file);
+        img.src = objectUrl;
+      } catch {
+        fallbackWithFileReader();
+      }
     });
   };
 
@@ -186,8 +185,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
     // Simulated progress steps for smooth user feedback
     const stepTimer1 = setTimeout(() => setCurrentStep(2), 1200);
-    const stepTimer2 = setTimeout(() => setCurrentStep(3), 2800);
-    const stepTimer3 = setTimeout(() => setCurrentStep(4), 4500);
+    const stepTimer2 = setTimeout(() => setCurrentStep(3), 2600);
+    const stepTimer3 = setTimeout(() => setCurrentStep(4), 4200);
 
     try {
       const response = await fetch('/api/extract-mcq', {
@@ -205,8 +204,20 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       clearTimeout(stepTimer3);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'MCQ এক্সট্রাকশন সম্পন্ন করা সম্ভব হয়নি। আবার চেষ্টা করুন।');
+        let serverErrorText = '';
+        try {
+          const errorData = await response.json();
+          serverErrorText = errorData.error || errorData.message || '';
+        } catch {
+          if (response.status === 413) {
+            serverErrorText = 'ছবির ফাইল সাইজ অতিরিক্ত বড় ছিল।';
+          } else if (response.status === 502 || response.status === 503 || response.status === 504) {
+            serverErrorText = 'AI সার্ভারে সাময়িক বিলম্ব হয়েছে। নিচে সরাসরি প্রশ্নপত্র লোড করে এখনই পরীক্ষা দিন।';
+          } else {
+            serverErrorText = 'সার্ভার সংযোগে সাময়িক বিলম্ব হয়েছে।';
+          }
+        }
+        throw new Error(serverErrorText || 'MCQ এক্সট্রাকশন সম্পন্ন করা সম্ভব হয়নি। আবার চেষ্টা করুন।');
       }
 
       const data = await response.json();
@@ -235,7 +246,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       }
 
       if (rawMsg.includes('503') || rawMsg.includes('high demand') || rawMsg.includes('UNAVAILABLE')) {
-        rawMsg = 'AI মডেলে সাময়িক অতিরিক্ত ট্রাফিকের চাপ ছিল (503 High Demand)। সার্ভারে ব্যাকআপ মডেল প্রস্তুত আছে, অনুগ্রহ করে "পুনরায় চেষ্টা করুন" বাটনে ক্লিক করুন।';
+        rawMsg = 'AI সার্ভারে সাময়িক উচ্চ ট্রাফিকের চাপ রয়েছে। আপনি সরাসরি নিচের বাটন দিয়ে প্রমিত পরীক্ষা শুরু করতে পারেন।';
       }
 
       setErrorMsg(rawMsg);
@@ -461,37 +472,49 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           </div>
         )}
 
-        {/* Error Alert with Actionable Retry */}
+        {/* Error Alert with Actionable Recovery */}
         {errorMsg && (
-          <div className="mt-5 p-4 sm:p-5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-sm">
+          <div className="mt-5 p-4 sm:p-5 rounded-xl bg-amber-50/90 border border-amber-200 text-slate-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-sm shadow-xs">
             <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold font-bengali text-rose-900">এক্সট্রাকশনে সাময়িক বিঘ্ন ঘটেছে</p>
-                <p className="font-bengali text-rose-700 text-xs sm:text-sm mt-0.5">{errorMsg}</p>
+                <p className="font-bold font-bengali text-slate-900">এক্সট্রাকশনে সাময়িক বিঘ্ন ঘটেছে</p>
+                <p className="font-bengali text-slate-700 text-xs sm:text-sm mt-0.5">{errorMsg}</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+            <div className="flex flex-wrap items-center gap-2 self-end sm:self-center shrink-0">
+              {/* Instant Start CBT Exam - student is never blocked! */}
+              <button
+                type="button"
+                id="btn-error-instant-cbt"
+                onClick={() => {
+                  const targetPack = subjectHint === 'Higher Math'
+                    ? 'hsc-student-upload-mock'
+                    : subjectHint === 'Chemistry'
+                    ? 'chem-organic-reactions'
+                    : subjectHint === 'Biology'
+                    ? 'bio-genetics-botany'
+                    : 'physics-circuits-magnetism';
+                  onSelectSamplePack(targetPack);
+                }}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg font-bold text-xs sm:text-sm transition-all flex items-center gap-1.5 shadow-xs font-bengali"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>তাৎক্ষণিক CBT টেস্ট শুরু করুন</span>
+              </button>
+
               {previewUrl && (
                 <button
                   type="button"
                   id="btn-error-retry"
                   onClick={handleStartExtraction}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg font-semibold text-xs sm:text-sm transition-all flex items-center gap-1.5 shadow-xs font-bengali"
+                  className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold text-xs sm:text-sm transition-all flex items-center gap-1.5 font-bengali"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                   <span>পুনরায় চেষ্টা করুন</span>
                 </button>
               )}
-              <button
-                type="button"
-                id="btn-error-load-demo"
-                onClick={() => onSelectSamplePack('hsc-student-upload-mock')}
-                className="px-3 py-2 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-lg font-medium text-xs sm:text-sm transition-all font-bengali"
-              >
-                ডেমো টেস্ট দেখুন
-              </button>
             </div>
           </div>
         )}
