@@ -160,61 +160,61 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12">
-      {/* Hero Header */}
-      <div className="text-center mb-8 sm:mb-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold mb-3">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+    <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-8 lg:py-10">
+      {/* Hero Header - Scaled & Streamlined for Mobile */}
+      <div className="text-center mb-5 sm:mb-8">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] sm:text-xs font-semibold mb-2 sm:mb-3">
+          <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
           <span>স্মার্ট বাংলাদেশি MCQ এক্সট্রাক্টর ও CBT ইঞ্জিন</span>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight font-bengali">
+        <h1 className="text-xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight font-bengali leading-snug sm:leading-tight">
           প্রশ্নপত্রের ছবি তুলুন, সরাসরি দিন <span className="text-emerald-600">লাইভ CBT পরীক্ষা</span>
         </h1>
-        <p className="mt-3 text-base sm:text-lg text-slate-600 max-w-2xl mx-auto font-bengali">
-          হাতে লেখা নোট, টিক মার্ক বা কাটাকুটি বাদ দিয়ে অবিকল বাংলা হরফ, গাণিতিক সমীকরণ ও রাসায়নিক সংকেত বজায় রেখে তৈরি করুন স্বয়ংক্রিয় কুইজ।
+        <p className="mt-1.5 sm:mt-2.5 text-xs sm:text-sm lg:text-base text-slate-600 max-w-xl mx-auto font-bengali leading-relaxed px-1">
+          হাতে লেখা নোট, টিক মার্ক বা কাটাকুটি বাদ দিয়ে অবিকল বাংলা হরফ ও গাণিতিক সমীকরণ বজায় রেখে তৈরি করুন স্বয়ংক্রিয় কুইজ।
         </p>
 
-        {/* Feature Badges */}
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm text-slate-600">
-          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
-            <Eraser className="w-4 h-4 text-emerald-600" />
-            <span className="font-bengali">রাফ হিসাব ও টিক মার্ক ফিল্টার</span>
+        {/* Compact Feature Badges */}
+        <div className="mt-3 sm:mt-4 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2.5 text-[11px] sm:text-xs text-slate-600">
+          <div className="flex items-center gap-1 bg-white px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg border border-slate-200 shadow-2xs">
+            <Eraser className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+            <span className="font-bengali">রাফ হিসাব ফিল্টার</span>
           </div>
-          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
-            <Zap className="w-4 h-4 text-emerald-600" />
-            <span className="font-bengali">LaTeX ও রাসায়নিক সংকেত সংরক্ষণ</span>
+          <div className="flex items-center gap-1 bg-white px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg border border-slate-200 shadow-2xs">
+            <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+            <span className="font-bengali">LaTeX ও সমীকরণ অক্ষত</span>
           </div>
-          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span className="font-bengali">নেগেটিভ মার্কিং সহ রিয়েল CBT</span>
+          <div className="flex items-center gap-1 bg-white px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg border border-slate-200 shadow-2xs">
+            <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+            <span className="font-bengali">নেগেটিভ মার্কিং CBT</span>
           </div>
         </div>
       </div>
 
       {/* Main Upload / Drag & Drop Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 lg:p-8">
         {/* Subject Filter Bar */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-            <BookMarked className="w-4 h-4 text-emerald-600" />
+        <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 sm:pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-700">
+            <BookMarked className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <span className="font-bengali">বিষয় নির্বাচন (ঐচ্ছিক):</span>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1 sm:gap-1.5">
             {[
-              { id: 'Auto-detect', label: 'অটো-ডিটেক্ট (সব বিষয়)' },
+              { id: 'Auto-detect', label: 'অটো-ডিটেক্ট' },
               { id: 'Physics', label: 'পদার্থবিজ্ঞান' },
               { id: 'Chemistry', label: 'রসায়ন' },
               { id: 'Higher Math', label: 'উচ্চতর গণিত' },
               { id: 'Biology', label: 'জীববিজ্ঞান' },
-              { id: 'Admission', label: 'ভর্তি প্রশ্নব্যাংক' },
+              { id: 'Admission', label: 'ভর্তি পরীক্ষা' },
             ].map((sub) => (
               <button
                 key={sub.id}
                 type="button"
                 onClick={() => setSubjectHint(sub.id)}
-                className={`text-xs px-3 py-1.5 rounded-lg transition-colors font-bengali ${
+                className={`text-[11px] sm:text-xs px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-colors font-bengali ${
                   subjectHint === sub.id
-                    ? 'bg-emerald-600 text-white font-medium'
+                    ? 'bg-emerald-600 text-white font-semibold'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
@@ -231,7 +231,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-8 sm:p-12 text-center transition-all cursor-pointer ${
+            className={`border-2 border-dashed rounded-xl p-5 sm:p-8 lg:p-10 text-center transition-all cursor-pointer ${
               isDragOver
                 ? 'border-emerald-500 bg-emerald-50/50'
                 : 'border-slate-300 hover:border-emerald-400 bg-slate-50/50'
@@ -254,25 +254,25 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
               className="hidden"
             />
 
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center shadow-xs">
-              <Upload className="w-8 h-8" />
+            <div className="w-12 h-12 sm:w-14 sm:h-14 mx-auto mb-3 rounded-xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center shadow-2xs">
+              <Upload className="w-6 h-6 sm:w-7 sm:h-7" />
             </div>
 
-            <h3 className="text-lg font-bold text-slate-900 font-bengali">
-              এখানে প্রশ্নপত্রের ছবি ড্র্যাগ করুন অথবা ক্লিক করে ফাইল বাছুন
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 font-bengali">
+              প্রশ্নপত্রের ছবি ড্র্যাগ করুন অথবা ক্লিক করে আপলোড করুন
             </h3>
-            <p className="mt-1 text-sm text-slate-500 font-bengali">
-              JPG, PNG, WebP সমর্থিত • কিবোর্ড থেকে সরাসরি স্ক্রিনশট পেস্ট (Ctrl+V) করতে পারেন
+            <p className="mt-1 text-xs text-slate-500 font-bengali max-w-sm mx-auto">
+              JPG, PNG, WebP • মোবাইল ক্যামেরা বা স্ক্রিনশট পেস্ট (Ctrl+V) সমর্থিত
             </p>
 
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3" onClick={(e) => e.stopPropagation()}>
+            <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
                 id="btn-upload-file"
                 onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-xs transition-colors flex items-center gap-2"
+                className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
               >
-                <Upload className="w-4 h-4" />
+                <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span>ফাইল সিলেক্ট করুন</span>
               </button>
 
@@ -280,10 +280,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 type="button"
                 id="btn-camera-capture"
                 onClick={() => cameraInputRef.current?.click()}
-                className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-sm font-medium shadow-xs transition-colors flex items-center gap-2"
+                className="w-full sm:w-auto px-4 py-2 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs sm:text-sm font-medium shadow-xs transition-colors flex items-center justify-center gap-1.5"
               >
-                <Camera className="w-4 h-4 text-emerald-600" />
-                <span>মোবাইল ক্যামেরা দিয়ে ছবি তুলুন</span>
+                <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
+                <span>ক্যামেরা দিয়ে ছবি তুলুন</span>
               </button>
             </div>
           </div>
@@ -412,17 +412,17 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       </div>
 
       {/* Built-in Sample Exam Question Packs for Instant Testing */}
-      <div className="mt-12">
-        <div className="flex items-center justify-between mb-4">
+      <div className="mt-6 sm:mt-10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 mb-3 sm:mb-4">
           <div>
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-bengali">
+            <h2 className="text-sm sm:text-lg font-bold text-slate-900 font-bengali">
               অথবা সরাসরি ডেমো প্রশ্নপত্র দিয়ে টেস্ট করুন:
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500 font-bengali">
-              বোর্ড পরীক্ষা ও ভর্তি পরীক্ষার আসল প্রশ্ন দিয়ে তাৎক্ষণিকভাবে সিবিটি সিস্টেম পরখ করুন
+            <p className="text-[11px] sm:text-xs text-slate-500 font-bengali">
+              বোর্ড ও ভর্তি পরীক্ষার আসল প্রশ্ন দিয়ে তাৎক্ষণিকভাবে CBT পরখ করুন
             </p>
           </div>
-          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+          <span className="self-start sm:self-auto text-[11px] sm:text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border border-emerald-200">
             {SAMPLE_PACKS.length} টি প্রস্তুতকৃত সেট
           </span>
         </div>
