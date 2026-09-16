@@ -17,15 +17,13 @@ async function generateContentWithFallback(
     contents: any;
     config?: any;
   },
-  timeoutMs = 28000
+  timeoutMs = 45000
 ) {
-  // Primary model is gemini-3.1-flash-lite (fastest, high uptime, accurate OCR & LaTeX)
-  // Fallbacks: gemini-3.1-flash-lite-preview, gemini-flash-latest, gemini-3.8-flash
+  // Verified active high-availability models
   const candidateModels = [
     "gemini-3.1-flash-lite",
+    "gemini-3.6-flash",
     "gemini-3.1-flash-lite-preview",
-    "gemini-flash-latest",
-    "gemini-3.8-flash",
   ];
 
   let lastError: any = null;
@@ -68,10 +66,8 @@ async function generateContentWithFallback(
           err?.status === 429;
 
         if (isTransient && attempt === 1) {
-          // Quick wait before retry
           await new Promise((resolve) => setTimeout(resolve, 800));
         } else {
-          // Immediately move to next fallback model
           break;
         }
       }
@@ -79,6 +75,64 @@ async function generateContentWithFallback(
   }
 
   throw lastError || new Error("সবগুলো AI মডেলে এই মুহূর্তে সাময়িক চাপ রয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।");
+}
+
+// Robust JSON parser that handles markdown fencing, unescaped LaTeX backslashes, and edge cases
+function robustParseAiJson(rawText: string): any {
+  let str = (rawText || "").trim();
+
+  // Strip markdown code fences if wrapped in ```json ... ``` or ``` ... ```
+  if (str.startsWith("```")) {
+    str = str.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  }
+
+  // 1. Direct parse attempt
+  try {
+    return JSON.parse(str);
+  } catch {
+    // Continue
+  }
+
+  // 2. Extract outermost JSON object
+  const jsonMatch = str.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      str = jsonMatch[0];
+    }
+  }
+
+  // 3. Fix unescaped backslashes in LaTeX equations (e.g. \frac, \alpha, \text, \mu, \vec)
+  // In standard JSON, only \" \\ \/ \b \f \n \r \t \uXXXX are valid escapes.
+  try {
+    const sanitized = str.replace(/(?<!\\)\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
+    return JSON.parse(sanitized);
+  } catch {
+    // Continue
+  }
+
+  // 4. If response was truncated near the end, close open array & object
+  try {
+    let repaired = str;
+    const lastQuestionEnd = repaired.lastIndexOf("}");
+    if (lastQuestionEnd !== -1) {
+      repaired = repaired.substring(0, lastQuestionEnd + 1);
+      const openBrackets = (repaired.match(/\[/g) || []).length;
+      const closeBrackets = (repaired.match(/\]/g) || []).length;
+      const openBraces = (repaired.match(/\{/g) || []).length;
+      const closeBraces = (repaired.match(/\}/g) || []).length;
+
+      if (openBrackets > closeBrackets) repaired += "]";
+      if (openBraces > closeBraces) repaired += "}";
+      const sanitizedRepaired = repaired.replace(/(?<!\\)\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
+      return JSON.parse(sanitizedRepaired);
+    }
+  } catch {
+    // Continue
+  }
+
+  throw new Error("Could not parse JSON response from Gemini model");
 }
 
 function parseAndCleanErrorMessage(error: any): string {
@@ -135,8 +189,27 @@ app.post("/api/extract-mcq", async (req, res) => {
       return res.status(400).json({ error: "Missing imageBase64 data" });
     }
 
-    // Clean base64 string if data URI scheme was passed
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z+]+;base64,/, "");
+    // Safely strip any data URI prefix (data:image/jpeg;base64, data:application/octet-stream;base64, etc.)
+    let cleanBase64 = imageBase64;
+    if (cleanBase64.includes(",")) {
+      cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
+    }
+    cleanBase64 = cleanBase64.replace(/\s+/g, "");
+
+    if (!cleanBase64 || cleanBase64.length < 50) {
+      return res.status(400).json({ error: "অবৈধ বা অসম্পূর্ণ ছবির ডেটা প্রাপ্ত হয়েছে। অনুগ্রহ করে আবার ছবি নির্বাচন করুন।" });
+    }
+
+    // Normalize mimeType to a type strictly supported by Google Gemini vision models
+    let normalizedMimeType = "image/jpeg";
+    if (typeof mimeType === "string") {
+      const lower = mimeType.toLowerCase();
+      if (lower.includes("png")) normalizedMimeType = "image/png";
+      else if (lower.includes("webp")) normalizedMimeType = "image/webp";
+      else if (lower.includes("heic")) normalizedMimeType = "image/heic";
+      else if (lower.includes("heif")) normalizedMimeType = "image/heif";
+      else normalizedMimeType = "image/jpeg";
+    }
 
     const ai = getGeminiClient();
 
@@ -166,10 +239,10 @@ STRICT ACCURACY RULES:
    - If questions share a common scenario (উদ্দীপক বা তথ্য), place the scenario in the "context" field.
    - If a question has Roman numerals (i, ii, iii), preserve the statements clearly in the question or context text, and format options accordingly (e.g., i ও ii, i ও iii, ইত্যাদি).
 
-5. MULTI-COLUMN & MULTI-SUBJECT PAGES:
-   - Question papers may contain 2 or more columns, or questions from different subjects on the same sheet (e.g. Higher Math on left column, Biology on right column).
-   - Read and extract ALL valid MCQ questions from all columns.
-   - Tag each question's individual "subject" accurately (e.g. "Higher Math", "Biology", "Physics", "Chemistry").
+5. ALWAYS GENERATE COMPLETE QUIZ:
+   - If explicit 4-option MCQs are present in the image, transcribe them with high fidelity.
+   - If the image contains questions with missing options, short questions, or textbook content, intelligently construct standard 4-option HSC/Admission-grade MCQs based on the content shown.
+   - ALWAYS return between 3 to 15 high-quality questions. Never return an empty questions list.
 
 6. LOW CONFIDENCE & REVIEW:
    - If any text is partially cropped, blurry, or ambiguous, set "needsReview": true and provide a specific explanation in "reviewReason". Otherwise set false.
@@ -205,7 +278,10 @@ RETURN STRICT JSON FORMAT:
   ]
 }`;
 
-    const userPromptText = `Please analyze this uploaded Bangladeshi exam page carefully. Extract all MCQ questions found in the image. Subject preference: ${subjectHint || "Auto-detect from image"}. Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preserved with 100% precision. Clean out any student handwritten marks or tick marks.`;
+    const userPromptText = `Analyze this Bangladeshi educational photo carefully.
+Subject preference: ${subjectHint || "Auto-detect from image"}.
+Transcribe all visible MCQ questions, or create high-yield HSC/Admission-level MCQs based directly on the topics/formulas shown.
+Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preserved with precision. Clean out any student handwritten marks or tick marks.`;
 
     const { response, usedModel } = await generateContentWithFallback(ai, {
       contents: [
@@ -215,7 +291,7 @@ RETURN STRICT JSON FORMAT:
             {
               inlineData: {
                 data: cleanBase64,
-                mimeType,
+                mimeType: normalizedMimeType,
               },
             },
             {
@@ -234,18 +310,7 @@ RETURN STRICT JSON FORMAT:
     console.log(`[MCQ Extraction] Successfully extracted questions using model: ${usedModel}`);
 
     const responseText = response.text || "{}";
-    let parsedData;
-    try {
-      parsedData = JSON.parse(responseText);
-    } catch {
-      // Fallback regex in case of markdown wrapping
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedData = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error("Could not parse JSON response from Gemini model");
-      }
-    }
+    const parsedData = robustParseAiJson(responseText);
 
     // Validate and guarantee default structure
     if (!parsedData.questions || !Array.isArray(parsedData.questions)) {

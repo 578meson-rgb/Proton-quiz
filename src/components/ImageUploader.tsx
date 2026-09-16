@@ -52,50 +52,73 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
   const compressAndResizeImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
+      // 3.5s safety fallback: if image canvas decoding fails or hangs on certain mobile browsers, fallback to direct dataURL
+      const safetyTimer = setTimeout(() => {
+        const fallbackReader = new FileReader();
+        fallbackReader.onload = () => resolve((fallbackReader.result as string) || '');
+        fallbackReader.onerror = () => resolve('');
+        fallbackReader.readAsDataURL(file);
+      }, 3500);
+
       const img = new Image();
       const reader = new FileReader();
 
       reader.onload = (e) => {
-        img.src = e.target?.result as string;
+        img.src = (e.target?.result as string) || '';
       };
       reader.onerror = () => {
+        clearTimeout(safetyTimer);
         const fallbackReader = new FileReader();
-        fallbackReader.onload = () => resolve(fallbackReader.result as string);
+        fallbackReader.onload = () => resolve((fallbackReader.result as string) || '');
+        fallbackReader.onerror = () => resolve('');
+        fallbackReader.readAsDataURL(file);
+      };
+
+      img.onerror = () => {
+        clearTimeout(safetyTimer);
+        const fallbackReader = new FileReader();
+        fallbackReader.onload = () => resolve((fallbackReader.result as string) || '');
+        fallbackReader.onerror = () => resolve('');
         fallbackReader.readAsDataURL(file);
       };
 
       img.onload = () => {
-        // High resolution limit (2048px) ensures all Bengali accents, math subscripts, and chemical bonds remain crystal sharp
-        const MAX_DIM = 2048;
-        let width = img.width;
-        let height = img.height;
+        clearTimeout(safetyTimer);
+        try {
+          // High resolution limit (2048px) ensures all Bengali accents, math subscripts, and chemical bonds remain crystal sharp
+          const MAX_DIM = 2048;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
-          } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
           }
-        }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(img.src);
+            return;
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Compress high-res mobile photos from ~12MB down to ~350KB for fast AI transmission
+          const compressed = canvas.toDataURL('image/jpeg', 0.88);
+          resolve(compressed);
+        } catch {
           resolve(img.src);
-          return;
         }
-
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Compress high-res mobile photos from ~12MB down to ~350KB for fast AI transmission
-        const compressed = canvas.toDataURL('image/jpeg', 0.88);
-        resolve(compressed);
       };
 
       reader.readAsDataURL(file);
@@ -103,7 +126,12 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   };
 
   const processFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
+    // Some mobile cameras produce empty file.type or image/heic
+    const isImage =
+      file.type.startsWith('image/') ||
+      /\.(jpe?g|png|webp|heic|heif|bmp|gif)$/i.test(file.name);
+
+    if (!isImage) {
       setErrorMsg('অনুগ্রহ করে একটি বৈধ ইমেজ ফাইল (JPG, PNG, WebP) নির্বাচন করুন।');
       return;
     }
@@ -167,7 +195,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: previewUrl,
-          mimeType: selectedFile?.type || 'image/jpeg',
+          mimeType: 'image/jpeg',
           subjectHint: subjectHint === 'Auto-detect' ? undefined : subjectHint,
         }),
       });
@@ -183,7 +211,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
       const data = await response.json();
       if (!data.questions || data.questions.length === 0) {
-        throw new Error('ছবিটিতে কোনো স্পষ্ট MCQ প্রশ্ন সনাক্ত করা যায়নি। অনুগ্রহ করে স্পষ্ট আলোর ছবি আপলোড করুন।');
+        throw new Error('ছবিটিতে কোনো প্রশ্ন সনাক্ত করা যায়নি। অনুগ্রহ করে স্পষ্ট আলোর ছবি আপলোড করুন অথবা নিচের ডেমো সেট দিয়ে পরীক্ষা শুরু করুন।');
       }
 
       onExtractionSuccess(data.questions, data.detectedSubject || 'Physics', previewUrl);
