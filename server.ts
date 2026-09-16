@@ -23,7 +23,6 @@ async function generateContentWithFallback(
   const candidateModels = [
     "gemini-3.1-flash-lite",
     "gemini-3.6-flash",
-    "gemini-2.5-flash",
   ];
 
   let lastError: any = null;
