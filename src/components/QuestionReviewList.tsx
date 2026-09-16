@@ -37,8 +37,10 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
 
   // Exam Configuration Settings
   const [examTitle, setExamTitle] = useState<string>(`${subject} - লাইভ মডেল টেস্ট`);
-  const [durationMinutes, setDurationMinutes] = useState<number>(
-    Math.max(5, Math.ceil(questions.length * 1.2)) // standard 1.2 mins per question
+  const [secondsPerQuestion, setSecondsPerQuestion] = useState<number>(45);
+  const [useCustomDuration, setUseCustomDuration] = useState<boolean>(false);
+  const [customMinutes, setCustomMinutes] = useState<number>(
+    Math.max(1, Math.ceil((questions.length * 45) / 60))
   );
   const [negativeMarking, setNegativeMarking] = useState<number>(0.25);
   const [mode, setMode] = useState<'cbt_exam' | 'practice'>('cbt_exam');
@@ -46,6 +48,26 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
   const [showImageModal, setShowImageModal] = useState<boolean>(false);
 
   const reviewQuestionsCount = questions.filter((q) => q.needsReview).length;
+
+  const toBanglaNum = (num: number | string): string => {
+    return num.toString().replace(/\d/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
+  };
+
+  const totalCalculatedSeconds = useCustomDuration
+    ? customMinutes * 60
+    : questions.length * secondsPerQuestion;
+
+  const formatBanglaDuration = (totalSecs: number) => {
+    const hours = Math.floor(totalSecs / 3600);
+    const minutes = Math.floor((totalSecs % 3600) / 60);
+    const seconds = totalSecs % 60;
+
+    const parts = [];
+    if (hours > 0) parts.push(`${toBanglaNum(hours)} ঘণ্টা`);
+    if (minutes > 0) parts.push(`${toBanglaNum(minutes)} মিনিট`);
+    if (seconds > 0 || parts.length === 0) parts.push(`${toBanglaNum(seconds)} সেকেন্ড`);
+    return parts.join(' ');
+  };
 
   const handleEditStart = (idx: number) => {
     setEditingIndex(idx);
@@ -74,9 +96,12 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
   };
 
   const handleLaunchCbt = () => {
+    const totalSecs = totalCalculatedSeconds;
     const settings: ExamSettings = {
       title: examTitle,
-      durationMinutes,
+      durationMinutes: Math.round((totalSecs / 60) * 10) / 10,
+      durationSeconds: totalSecs,
+      secondsPerQuestion: useCustomDuration ? Math.round(totalSecs / (questions.length || 1)) : secondsPerQuestion,
       negativeMarking,
       marksPerQuestion: 1.0,
       passPercentage: 40,
@@ -139,7 +164,7 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
 
         {/* Exam Configuration Parameters */}
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
+          <div className="lg:col-span-1">
             <label className="block text-xs font-semibold text-slate-600 mb-1.5 font-bengali">
               পরীক্ষার নাম
             </label>
@@ -151,24 +176,103 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5 font-bengali">
-              সময়সীমা (মিনিট)
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                min="1"
-                max="180"
-                value={durationMinutes}
-                onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 pl-8 font-mono-code"
-              />
-              <Clock className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
+          {/* 45 Seconds Per MCQ Time Calculator */}
+          <div className="sm:col-span-2 lg:col-span-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-700 font-bengali flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                <span>সময় গণনা (প্রতি MCQ ৪৫ সেকেন্ড)</span>
+              </label>
+              <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full font-bengali">
+                মোট: {formatBanglaDuration(totalCalculatedSeconds)}
+              </span>
             </div>
+
+            {!useCustomDuration ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1 sm:gap-1.5">
+                    {[
+                      { label: '৪৫ সে (স্ট্যান্ডার্ড)', val: 45 },
+                      { label: '৩০ সে (কুইক)', val: 30 },
+                      { label: '৬০ সে (১ মিনিট)', val: 60 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.val}
+                        type="button"
+                        onClick={() => setSecondsPerQuestion(preset.val)}
+                        className={`px-2 py-1 text-xs rounded-lg font-medium transition-all ${
+                          secondsPerQuestion === preset.val
+                            ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUseCustomDuration(true);
+                      setCustomMinutes(Math.max(1, Math.ceil(totalCalculatedSeconds / 60)));
+                    }}
+                    className="text-[11px] text-slate-500 hover:text-emerald-700 underline font-bengali"
+                  >
+                    কাস্টম মিনিট
+                  </button>
+                </div>
+
+                <div className="bg-white p-2 rounded-lg border border-slate-200/80 flex items-center justify-between text-xs text-slate-700 font-bengali">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-slate-900">
+                      {toBanglaNum(questions.length)} টি প্রশ্ন × {toBanglaNum(secondsPerQuestion)} সেকেন্ড
+                    </span>
+                    <span className="text-slate-400">=</span>
+                    <span className="font-extrabold text-emerald-700">
+                      {formatBanglaDuration(totalCalculatedSeconds)}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono-code text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                    {Math.floor(totalCalculatedSeconds / 60)}:
+                    {(totalCalculatedSeconds % 60).toString().padStart(2, '0')}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min="1"
+                      max="300"
+                      value={customMinutes}
+                      onChange={(e) => setCustomMinutes(Math.max(1, Number(e.target.value)))}
+                      className="w-full px-3 py-1.5 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 pl-7 font-mono-code"
+                    />
+                    <Clock className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2.5" />
+                  </div>
+                  <span className="text-xs text-slate-600 font-bengali">মিনিট</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-500 font-bengali">
+                    মোট: {toBanglaNum(customMinutes * 60)} সেকেন্ড ({toBanglaNum(Math.round((customMinutes * 60) / (questions.length || 1)))} সে/প্রশ্ন)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setUseCustomDuration(false)}
+                    className="text-emerald-600 hover:underline font-bengali"
+                  >
+                    ৪৫ সে/MCQ তে ফিরুন
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div>
+          <div className="lg:col-span-1">
             <label className="block text-xs font-semibold text-slate-600 mb-1.5 font-bengali">
               নেগেটিভ মার্কিং
             </label>
@@ -181,35 +285,35 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
               <option value="0.20">-0.20 (কিছু প্রকৌশল/গুচ্ছ)</option>
               <option value="0">0.00 (HSC বোর্ড স্ট্যান্ডার্ড)</option>
             </select>
-          </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5 font-bengali">
-              পরীক্ষার ধরণ (Mode)
-            </label>
-            <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs">
-              <button
-                type="button"
-                onClick={() => setMode('cbt_exam')}
-                className={`flex-1 py-2 font-medium font-bengali transition-colors ${
-                  mode === 'cbt_exam'
-                    ? 'bg-emerald-600 text-white font-bold'
-                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                রিয়েল CBT
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('practice')}
-                className={`flex-1 py-2 font-medium font-bengali transition-colors ${
-                  mode === 'practice'
-                    ? 'bg-emerald-600 text-white font-bold'
-                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                অনুশীলন
-              </button>
+            <div className="mt-2.5">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 font-bengali">
+                পরীক্ষার ধরণ (Mode)
+              </label>
+              <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs">
+                <button
+                  type="button"
+                  onClick={() => setMode('cbt_exam')}
+                  className={`flex-1 py-1.5 font-medium font-bengali transition-colors ${
+                    mode === 'cbt_exam'
+                      ? 'bg-emerald-600 text-white font-bold'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  রিয়েল CBT
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('practice')}
+                  className={`flex-1 py-1.5 font-medium font-bengali transition-colors ${
+                    mode === 'practice'
+                      ? 'bg-emerald-600 text-white font-bold'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  অনুশীলন
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -452,7 +556,7 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
             {questions.length} টি প্রশ্ন সম্পূর্ণ প্রস্তুত
           </h4>
           <p className="text-xs text-slate-400 font-bengali">
-            সময়: {durationMinutes} মিনিট • নেগেটিভ মার্কিং: -{negativeMarking}
+            সময়: {formatBanglaDuration(totalCalculatedSeconds)} (প্রতি প্রশ্ন {toBanglaNum(secondsPerQuestion)} সেকেন্ড) • নেগেটিভ: -{negativeMarking}
           </p>
         </div>
 

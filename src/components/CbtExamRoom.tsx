@@ -37,7 +37,7 @@ export const CbtExamRoom: React.FC<CbtExamRoomProps> = ({
   const [timeSpent, setTimeSpent] = useState<Record<string, number>>({}); // questionId -> seconds
 
   // Timer: seconds left
-  const totalSeconds = settings.durationMinutes * 60;
+  const totalSeconds = settings.durationSeconds || Math.round(settings.durationMinutes * 60);
   const [secondsLeft, setSecondsLeft] = useState<number>(totalSeconds);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -198,17 +198,21 @@ export const CbtExamRoom: React.FC<CbtExamRoomProps> = ({
     }
   };
 
-  // Format time mm:ss
+  // Format time mm:ss or hh:mm:ss
   const formatTime = (secs: number) => {
-    const mins = Math.floor(secs / 60);
+    const hrs = Math.floor(secs / 3600);
+    const mins = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
     return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   const answeredCount = Object.keys(answers).length;
   const flaggedCount = Object.values(flagged).filter(Boolean).length;
   const unansweredCount = questions.length - answeredCount;
-  const isTimeLow = secondsLeft <= 180; // 3 mins or less
+  const isTimeLow = secondsLeft <= Math.min(180, Math.max(30, Math.floor(totalSeconds * 0.2)));
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-bengali">
@@ -224,7 +228,7 @@ export const CbtExamRoom: React.FC<CbtExamRoomProps> = ({
                 {settings.title}
               </h2>
               <p className="text-xs text-slate-400">
-                মান: +{settings.marksPerQuestion} • নেগেটিভ: -{settings.negativeMarking}
+                মান: +{settings.marksPerQuestion} • নেগেটিভ: -{settings.negativeMarking} • প্রতি প্রশ্ন: {settings.secondsPerQuestion || 45} সে
               </p>
             </div>
           </div>

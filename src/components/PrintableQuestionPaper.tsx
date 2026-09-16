@@ -27,6 +27,19 @@ export const PrintableQuestionPaper: React.FC<PrintableQuestionPaperProps> = ({
       .join('');
   };
 
+  const formatExamDuration = () => {
+    const totalSecs = settings.durationSeconds || Math.round(settings.durationMinutes * 60);
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    if (m > 0 && s > 0) {
+      return `${toBanglaNum(m)} মিনিট ${toBanglaNum(s)} সেকেন্ড`;
+    } else if (m > 0) {
+      return `${toBanglaNum(m)} মিনিট`;
+    } else {
+      return `${toBanglaNum(s)} সেকেন্ড`;
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 font-bengali">
       {/* Top Action Toolbar (Hidden during print) */}
@@ -89,7 +102,7 @@ export const PrintableQuestionPaper: React.FC<PrintableQuestionPaperProps> = ({
           </p>
 
           <div className="flex justify-between items-center text-xs sm:text-sm font-semibold text-slate-800 mt-3 px-2">
-            <span>সময়: {toBanglaNum(settings.durationMinutes)} মিনিট</span>
+            <span>সময়: {formatExamDuration()} (প্রতি প্রশ্ন {toBanglaNum(settings.secondsPerQuestion || 45)} সেকেন্ড)</span>
             <span className="font-bold">বিষয় কোড: ১৭৪</span>
             <span>পূর্ণমান: {toBanglaNum(questions.length)}</span>
           </div>

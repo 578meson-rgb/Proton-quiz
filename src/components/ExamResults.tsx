@@ -185,10 +185,13 @@ export const ExamResults: React.FC<ExamResultsProps> = ({
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
             <div className="flex items-center justify-center gap-1.5 text-xs text-slate-700 font-semibold mb-1">
               <Clock className="w-4 h-4 text-slate-500" />
-              <span>মোট সময়</span>
+              <span>মোট ব্যয়িত সময়</span>
             </div>
             <p className="text-sm font-bold text-slate-900 mt-2">
               {formatSeconds(submission.totalTimeSpent)}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              বরাদ্দ: {formatSeconds(settings.durationSeconds || Math.round(settings.durationMinutes * 60))}
             </p>
           </div>
         </div>

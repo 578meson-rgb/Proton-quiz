@@ -32,6 +32,8 @@ export interface MCQQuestion {
 export interface ExamSettings {
   title: string;
   durationMinutes: number;
+  durationSeconds?: number; // Exact total duration in seconds (e.g. questions.length * 45s)
+  secondsPerQuestion?: number; // Allocated seconds per MCQ (default 45s)
   negativeMarking: number; // e.g., 0.25 for admission, 0 for HSC Board
   marksPerQuestion: number;
   passPercentage: number;

@@ -16,6 +16,8 @@ export default function App() {
   const [examSettings, setExamSettings] = useState<ExamSettings>({
     title: 'HSC & Admission CBT Model Test',
     durationMinutes: 15,
+    durationSeconds: 15 * 60,
+    secondsPerQuestion: 45,
     negativeMarking: 0.25,
     marksPerQuestion: 1.0,
     passPercentage: 40,
@@ -30,13 +32,16 @@ export default function App() {
     detectedSubject: SubjectType,
     imageSrc?: string
   ) => {
+    const totalSecs = extractedQuestions.length * 45;
     setQuestions(extractedQuestions);
     setSubject(detectedSubject);
     setRawImage(imageSrc);
     setExamSettings((prev) => ({
       ...prev,
       title: `${detectedSubject} - লাইভ CBT মডেল টেস্ট`,
-      durationMinutes: Math.max(5, Math.ceil(extractedQuestions.length * 1.2)),
+      secondsPerQuestion: 45,
+      durationSeconds: totalSecs,
+      durationMinutes: Math.round((totalSecs / 60) * 10) / 10,
     }));
     setCurrentTab('review_questions');
   };
@@ -46,13 +51,16 @@ export default function App() {
     const pack = SAMPLE_PACKS.find((p) => p.id === packId);
     if (!pack) return;
 
+    const totalSecs = pack.questions.length * 45;
     setQuestions(pack.questions);
     setSubject(pack.subject);
     setRawImage(undefined);
     setExamSettings((prev) => ({
       ...prev,
       title: `${pack.nameBn} (মডেল টেস্ট)`,
-      durationMinutes: Math.max(5, Math.ceil(pack.questions.length * 1.2)),
+      secondsPerQuestion: 45,
+      durationSeconds: totalSecs,
+      durationMinutes: Math.round((totalSecs / 60) * 10) / 10,
     }));
     setCurrentTab('review_questions');
   };
