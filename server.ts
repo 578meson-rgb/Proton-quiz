@@ -121,6 +121,9 @@ function parseAndCleanErrorMessage(error: any): string {
   if (!error) return "অপ্রত্যাশিত কোনো ত্রুটি হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।";
   const raw = typeof error === "string" ? error : error.message || JSON.stringify(error);
 
+  if (raw.includes("API_KEY_INVALID") || raw.includes("API key not valid") || raw.includes("GEMINI_API_KEY is not set")) {
+    return "Gemini API Key টি সঠিকভাবে কনফিগার করা হয়নি। Vercel Settings বা .env ফাইলে আপনার নতুন কী (AQ.Ab... বা AIza...) যুক্ত করুন।";
+  }
   if (raw.includes("aborted") || raw.includes("timeout")) {
     return "AI প্রসেসিংয়ে কিছুটা বেশি সময় নিয়েছে। অনুগ্রহ করে 'পুনরায় চেষ্টা করুন' বাটনে চাপ দিন।";
   }
@@ -138,10 +141,14 @@ function parseAndCleanErrorMessage(error: any): string {
 
 // Initialize Google Gemini AI client
 function getGeminiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const rawKey = process.env.GEMINI_API_KEY || "";
+  // Trim spaces, quotes, or accidental newlines from environment variable
+  const apiKey = rawKey.trim().replace(/^["']|["']$/g, "");
+
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not set in the environment.");
+    throw new Error("GEMINI_API_KEY is not set in the environment. Please configure GEMINI_API_KEY in Vercel or your .env file.");
   }
+
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
