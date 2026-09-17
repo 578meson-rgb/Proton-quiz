@@ -2,10 +2,7 @@ export type SubjectType =
   | 'Physics' 
   | 'Chemistry' 
   | 'Higher Math' 
-  | 'Biology' 
-  | 'General Science' 
-  | 'Admission Question Bank'
-  | 'Other';
+  | 'Biology';
 
 export interface MCQOption {
   id: string;

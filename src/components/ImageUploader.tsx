@@ -6,15 +6,25 @@ import {
   FileText, 
   AlertCircle, 
   CheckCircle2, 
-  ArrowRight,
-  ShieldCheck,
-  Zap,
-  BookMarked,
-  Eraser,
-  Eye
+  ArrowRight, 
+  ShieldCheck, 
+  Zap, 
+  BookMarked, 
+  Eraser, 
+  Eye,
+  Plus,
+  Trash2,
+  Images
 } from 'lucide-react';
 import { SubjectType, MCQQuestion } from '../types';
 import { SAMPLE_PACKS } from '../data/sampleQuestions';
+
+interface UploadedImageItem {
+  id: string;
+  name: string;
+  size: number;
+  dataUrl: string;
+}
 
 interface ImageUploaderProps {
   onExtractionSuccess: (questions: MCQQuestion[], subject: SubjectType, rawImage?: string) => void;
@@ -25,9 +35,9 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   onExtractionSuccess,
   onSelectSamplePack,
 }) => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [subjectHint, setSubjectHint] = useState<string>('Auto-detect');
+  const [uploadedImages, setUploadedImages] = useState<UploadedImageItem[]>([]);
+  const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<number>(0);
+  const [subjectHint, setSubjectHint] = useState<SubjectType | 'Auto-detect'>('Auto-detect');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -40,19 +50,18 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       if (e.clipboardData && e.clipboardData.files.length > 0) {
-        const file = e.clipboardData.files[0];
-        if (file.type.startsWith('image/')) {
-          processFile(file);
+        const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'));
+        if (files.length > 0) {
+          processFiles(files);
         }
       }
     };
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, []);
+  }, [uploadedImages]);
 
   const compressAndResizeImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
-      // Helper for FileReader fallback if ObjectURL or Image fails
       const fallbackWithFileReader = () => {
         const reader = new FileReader();
         reader.onload = () => resolve((reader.result as string) || '');
@@ -61,22 +70,20 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       };
 
       try {
-        // Fast Object URL decoding avoids allocating massive base64 strings in memory
         const objectUrl = URL.createObjectURL(file);
         const img = new Image();
 
-        // Safety timer: fallback after 2.5s
         const safetyTimer = setTimeout(() => {
           try { URL.revokeObjectURL(objectUrl); } catch {}
           fallbackWithFileReader();
-        }, 2500);
+        }, 3000);
 
         img.onload = () => {
           clearTimeout(safetyTimer);
           try {
             URL.revokeObjectURL(objectUrl);
-            // 1400px max dimension: preserves crisp Bengali script & complex math without bloating payload
-            const MAX_DIM = 1400;
+            // 1600px max dimension: crisp Bengali font, equations, fractions & 2-column questions
+            const MAX_DIM = 1600;
             let width = img.width;
             let height = img.height;
 
@@ -103,8 +110,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Compress to ~150KB JPEG for sub-second network transfer and instant AI vision recognition
-            const compressed = canvas.toDataURL('image/jpeg', 0.82);
+            // Compress to ~160KB-220KB JPEG for fast transfer & high OCR recognition
+            const compressed = canvas.toDataURL('image/jpeg', 0.85);
             resolve(compressed);
           } catch {
             fallbackWithFileReader();
@@ -124,34 +131,55 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     });
   };
 
-  const processFile = async (file: File) => {
-    // Some mobile cameras produce empty file.type or image/heic
-    const isImage =
-      file.type.startsWith('image/') ||
-      /\.(jpe?g|png|webp|heic|heif|bmp|gif)$/i.test(file.name);
+  const processFiles = async (files: File[]) => {
+    const validImageFiles = files.filter((file) => {
+      return (
+        file.type.startsWith('image/') ||
+        /\.(jpe?g|png|webp|heic|heif|bmp|gif)$/i.test(file.name)
+      );
+    });
 
-    if (!isImage) {
-      setErrorMsg('অনুগ্রহ করে একটি বৈধ ইমেজ ফাইল (JPG, PNG, WebP) নির্বাচন করুন।');
+    if (validImageFiles.length === 0) {
+      setErrorMsg('অনুগ্রহ করে বৈধ ইমেজ ফাইল (JPG, PNG, WebP) নির্বাচন করুন।');
       return;
     }
+
     setErrorMsg(null);
-    setSelectedFile(file);
+
+    // Limit to max 8 photos total to protect payload limits
+    const allowedNewFiles = validImageFiles.slice(0, Math.max(0, 8 - uploadedImages.length));
+    if (allowedNewFiles.length < validImageFiles.length) {
+      setErrorMsg('একসাথে সর্বোচ্চ ৮টি পৃষ্ঠার ছবি আপলোড করতে পারবেন।');
+    }
 
     try {
-      const optimized = await compressAndResizeImage(file);
-      setPreviewUrl(optimized);
-    } catch {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      const newItems: UploadedImageItem[] = [];
+      for (const file of allowedNewFiles) {
+        const compressedUrl = await compressAndResizeImage(file);
+        if (compressedUrl) {
+          newItems.push({
+            id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            name: file.name,
+            size: file.size,
+            dataUrl: compressedUrl,
+          });
+        }
+      }
+
+      if (newItems.length > 0) {
+        setUploadedImages((prev) => [...prev, ...newItems]);
+        setSelectedPreviewIndex((prev) => (uploadedImages.length === 0 ? 0 : prev));
+      }
+    } catch (err) {
+      console.error('Error processing uploaded files:', err);
+      setErrorMsg('ছবি প্রসেসিংয়ে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(Array.from(e.target.files));
+      e.target.value = '';
     }
   };
 
@@ -169,13 +197,23 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFile(e.dataTransfer.files[0]);
+      processFiles(Array.from(e.dataTransfer.files));
     }
   };
 
+  const handleRemoveImage = (indexToRemove: number) => {
+    setUploadedImages((prev) => {
+      const updated = prev.filter((_, i) => i !== indexToRemove);
+      if (selectedPreviewIndex >= updated.length) {
+        setSelectedPreviewIndex(Math.max(0, updated.length - 1));
+      }
+      return updated;
+    });
+  };
+
   const handleStartExtraction = async () => {
-    if (!previewUrl) {
-      setErrorMsg('প্রথমে একটি প্রশ্নপত্রের ছবি আপলোড করুন অথবা ক্যামেরা দিয়ে ছবি তুলুন।');
+    if (uploadedImages.length === 0) {
+      setErrorMsg('প্রথমে অন্তত একটি প্রশ্নপত্রের ছবি আপলোড করুন অথবা ক্যামেরা দিয়ে ছবি তুলুন।');
       return;
     }
 
@@ -183,17 +221,17 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     setErrorMsg(null);
     setCurrentStep(1);
 
-    // Simulated progress steps for smooth user feedback
-    const stepTimer1 = setTimeout(() => setCurrentStep(2), 1200);
-    const stepTimer2 = setTimeout(() => setCurrentStep(3), 2600);
-    const stepTimer3 = setTimeout(() => setCurrentStep(4), 4200);
+    // Dynamic progress indicators for multi-image processing
+    const stepTimer1 = setTimeout(() => setCurrentStep(2), 1500);
+    const stepTimer2 = setTimeout(() => setCurrentStep(3), 3200);
+    const stepTimer3 = setTimeout(() => setCurrentStep(4), 5400);
 
     try {
       const response = await fetch('/api/extract-mcq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: previewUrl,
+          imagesBase64: uploadedImages.map((img) => img.dataUrl),
           mimeType: 'image/jpeg',
           subjectHint: subjectHint === 'Auto-detect' ? undefined : subjectHint,
         }),
@@ -210,7 +248,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           serverErrorText = errorData.error || errorData.message || '';
         } catch {
           if (response.status === 413) {
-            serverErrorText = 'ছবির ফাইল সাইজ অতিরিক্ত বড় ছিল।';
+            serverErrorText = 'ছবির ফাইলের মোট সাইজ অতিরিক্ত বড় ছিল। কম সংখ্যক ছবি দিয়ে চেষ্টা করুন।';
           } else if (response.status === 502 || response.status === 503 || response.status === 504) {
             serverErrorText = 'AI সার্ভারে সাময়িক বিলম্ব হয়েছে। নিচে সরাসরি প্রশ্নপত্র লোড করে এখনই পরীক্ষা দিন।';
           } else {
@@ -222,15 +260,15 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
       const data = await response.json();
       if (!data.questions || data.questions.length === 0) {
-        throw new Error('ছবিটিতে কোনো প্রশ্ন সনাক্ত করা যায়নি। অনুগ্রহ করে স্পষ্ট আলোর ছবি আপলোড করুন অথবা নিচের ডেমো সেট দিয়ে পরীক্ষা শুরু করুন।');
+        throw new Error('ছবিগুলোতে কোনো বিজ্ঞান প্রশ্ন সনাক্ত করা যায়নি। অনুগ্রহ করে পরিষ্কার আলোর ছবি আপলোড করুন অথবা নিচের ডেমো সেট দিয়ে পরীক্ষা শুরু করুন।');
       }
 
-      onExtractionSuccess(data.questions, data.detectedSubject || 'Physics', previewUrl);
+      const primaryImageSrc = uploadedImages[0]?.dataUrl;
+      onExtractionSuccess(data.questions, data.detectedSubject || 'Physics', primaryImageSrc);
     } catch (err: any) {
       console.error('Extraction error:', err);
       let rawMsg = err?.message || 'সার্ভার সংযোগে ত্রুটি হয়েছে।';
-      
-      // Parse nested JSON if present
+
       try {
         const jsonMatch = rawMsg.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -256,45 +294,47 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     }
   };
 
+  const activeImage = uploadedImages[selectedPreviewIndex] || uploadedImages[0];
+
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-8 lg:py-10">
-      {/* Hero Header - Scaled & Streamlined for Mobile */}
+      {/* Hero Header */}
       <div className="text-center mb-5 sm:mb-8">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] sm:text-xs font-semibold mb-2 sm:mb-3">
           <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-          <span>স্মার্ট বাংলাদেশি MCQ এক্সট্রাক্টর ও CBT ইঞ্জিন</span>
+          <span>বিজ্ঞান বিষয়সমূহের স্মার্ট MCQ এক্সট্রাক্টর ও CBT ইঞ্জিন</span>
         </div>
         <h1 className="text-xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight font-bengali leading-snug sm:leading-tight">
-          প্রশ্নপত্রের ছবি তুলুন, সরাসরি দিন <span className="text-emerald-600">লাইভ CBT পরীক্ষা</span>
+          একাধিক পৃষ্ঠার ছবি তুলুন, সরাসরি দিন <span className="text-emerald-600">লাইভ CBT পরীক্ষা</span>
         </h1>
         <p className="mt-1.5 sm:mt-2.5 text-xs sm:text-sm lg:text-base text-slate-600 max-w-xl mx-auto font-bengali leading-relaxed px-1">
-          হাতে লেখা নোট, টিক মার্ক বা কাটাকুটি বাদ দিয়ে অবিকল বাংলা হরফ ও গাণিতিক সমীকরণ বজায় রেখে তৈরি করুন স্বয়ংক্রিয় কুইজ।
+          পদার্থবিজ্ঞান, রসায়ন, উচ্চতর গণিত ও জীববিজ্ঞান প্রশ্নপত্রের সকল প্রশ্ন নিখুঁতভাবে স্ক্যান করে স্বয়ংক্রিয় কুইজ তৈরি করুন।
         </p>
 
-        {/* Compact Feature Badges */}
+        {/* Feature Badges */}
         <div className="mt-3 sm:mt-4 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2.5 text-[11px] sm:text-xs text-slate-600">
           <div className="flex items-center gap-1 bg-white px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg border border-slate-200 shadow-2xs">
-            <Eraser className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-            <span className="font-bengali">রাফ হিসাব ফিল্টার</span>
+            <Images className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+            <span className="font-bengali">একাধিক ছবি আপলোড</span>
           </div>
           <div className="flex items-center gap-1 bg-white px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg border border-slate-200 shadow-2xs">
             <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-            <span className="font-bengali">LaTeX ও সমীকরণ অক্ষত</span>
+            <span className="font-bengali">সবগুলো প্রশ্ন এক্সট্র্যাক্ট</span>
           </div>
           <div className="flex items-center gap-1 bg-white px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg border border-slate-200 shadow-2xs">
             <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-            <span className="font-bengali">নেগেটিভ মার্কিং CBT</span>
+            <span className="font-bengali">শুধুমাত্র সায়েন্স বিষয়সমূহ</span>
           </div>
         </div>
       </div>
 
       {/* Main Upload / Drag & Drop Card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 lg:p-8">
-        {/* Subject Filter Bar */}
+        {/* Science Subjects Filter Bar */}
         <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 sm:pb-4 border-b border-slate-100">
           <div className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-700">
             <BookMarked className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="font-bengali">বিষয় নির্বাচন (ঐচ্ছিক):</span>
+            <span className="font-bengali">বিজ্ঞান বিষয় ফিল্টার:</span>
           </div>
           <div className="flex flex-wrap gap-1 sm:gap-1.5">
             {[
@@ -303,15 +343,14 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
               { id: 'Chemistry', label: 'রসায়ন' },
               { id: 'Higher Math', label: 'উচ্চতর গণিত' },
               { id: 'Biology', label: 'জীববিজ্ঞান' },
-              { id: 'Admission', label: 'ভর্তি পরীক্ষা' },
             ].map((sub) => (
               <button
                 key={sub.id}
                 type="button"
-                onClick={() => setSubjectHint(sub.id)}
+                onClick={() => setSubjectHint(sub.id as any)}
                 className={`text-[11px] sm:text-xs px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-colors font-bengali ${
                   subjectHint === sub.id
-                    ? 'bg-emerald-600 text-white font-semibold'
+                    ? 'bg-emerald-600 text-white font-semibold shadow-xs'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
@@ -321,45 +360,47 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           </div>
         </div>
 
-        {/* Upload Dropzone */}
-        {!previewUrl ? (
+        {/* Hidden File Inputs */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept="image/png, image/jpeg, image/webp, image/*"
+          multiple
+          className="hidden"
+        />
+        <input
+          type="file"
+          ref={cameraInputRef}
+          onChange={handleFileChange}
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+        />
+
+        {/* Upload Dropzone when no images uploaded yet */}
+        {uploadedImages.length === 0 ? (
           <div
             id="dropzone-area"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-5 sm:p-8 lg:p-10 text-center transition-all cursor-pointer ${
+            className={`border-2 border-dashed rounded-xl p-6 sm:p-10 text-center transition-all cursor-pointer ${
               isDragOver
                 ? 'border-emerald-500 bg-emerald-50/50'
                 : 'border-slate-300 hover:border-emerald-400 bg-slate-50/50'
             }`}
             onClick={() => fileInputRef.current?.click()}
           >
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/png, image/jpeg, image/webp"
-              className="hidden"
-            />
-            <input
-              type="file"
-              ref={cameraInputRef}
-              onChange={handleFileChange}
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-            />
-
             <div className="w-12 h-12 sm:w-14 sm:h-14 mx-auto mb-3 rounded-xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center shadow-2xs">
               <Upload className="w-6 h-6 sm:w-7 sm:h-7" />
             </div>
 
             <h3 className="text-sm sm:text-base font-bold text-slate-900 font-bengali">
-              প্রশ্নপত্রের ছবি ড্র্যাগ করুন অথবা ক্লিক করে আপলোড করুন
+              প্রশ্নপত্রের এক বা একাধিক ছবি ড্র্যাগ করুন অথবা ক্লিক করে আপলোড করুন
             </h3>
-            <p className="mt-1 text-xs text-slate-500 font-bengali max-w-sm mx-auto">
-              JPG, PNG, WebP • মোবাইল ক্যামেরা বা স্ক্রিনশট পেস্ট (Ctrl+V) সমর্থিত
+            <p className="mt-1 text-xs text-slate-500 font-bengali max-w-md mx-auto">
+              JPG, PNG, WebP • একবারে একাধিক পৃষ্ঠার ছবি বা মোবাইল ক্যামেরা দিয়ে তোলা ফটো নির্বাচন করুন
             </p>
 
             <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3" onClick={(e) => e.stopPropagation()}>
@@ -367,51 +408,125 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 type="button"
                 id="btn-upload-file"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
               >
-                <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span>ফাইল সিলেক্ট করুন</span>
+                <Upload className="w-4 h-4" />
+                <span>একাধিক ছবি সিলেক্ট করুন</span>
               </button>
 
               <button
                 type="button"
                 id="btn-camera-capture"
                 onClick={() => cameraInputRef.current?.click()}
-                className="w-full sm:w-auto px-4 py-2 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs sm:text-sm font-medium shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs sm:text-sm font-medium shadow-xs transition-colors flex items-center justify-center gap-1.5"
               >
-                <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
+                <Camera className="w-4 h-4 text-emerald-600" />
                 <span>ক্যামেরা দিয়ে ছবি তুলুন</span>
               </button>
             </div>
           </div>
         ) : (
-          /* Image Preview & Extraction Controls */
-          <div className="space-y-6">
-            <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5 max-h-[420px] flex items-center justify-center p-2">
-              <img
-                src={previewUrl}
-                alt="Uploaded Bangladeshi Exam Sheet"
-                className="max-h-[400px] w-auto object-contain rounded-lg shadow-xs"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewUrl(null);
-                  setSelectedFile(null);
-                  setErrorMsg(null);
-                }}
-                className="absolute top-4 right-4 bg-slate-900/80 hover:bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-sm backdrop-blur-xs transition-all font-bengali"
-              >
-                ছবি পরিবর্তন করুন
-              </button>
+          /* Multi-Image Preview & Extraction Controls */
+          <div className="space-y-5">
+            {/* Gallery Thumbnail Strip for Multi-Photo */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-bold text-slate-800 font-bengali">
+                  আপলোডকৃত পৃষ্ঠা ({uploadedImages.length}/৮):
+                </span>
+                <span className="text-[11px] text-slate-500 font-bengali">
+                  সবগুলো পৃষ্ঠার প্রশ্ন একসাথে এক্সট্রাক্ট করা হবে
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading || uploadedImages.length >= 8}
+                  className="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 rounded-md border border-emerald-200 transition-colors flex items-center gap-1 font-bengali"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>আরও ছবি যুক্ত করুন</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadedImages([]);
+                    setSelectedPreviewIndex(0);
+                    setErrorMsg(null);
+                  }}
+                  disabled={isLoading}
+                  className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-md border border-rose-200 transition-colors flex items-center gap-1 font-bengali"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>সব মুছুন</span>
+                </button>
+              </div>
             </div>
+
+            {/* Thumbnail Row */}
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+              {uploadedImages.map((img, idx) => (
+                <div
+                  key={img.id}
+                  onClick={() => setSelectedPreviewIndex(idx)}
+                  className={`relative shrink-0 w-20 h-24 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                    selectedPreviewIndex === idx
+                      ? 'border-emerald-600 shadow-sm ring-2 ring-emerald-400/40 scale-[1.02]'
+                      : 'border-slate-200 hover:border-slate-400 opacity-75 hover:opacity-100'
+                  }`}
+                >
+                  <img src={img.dataUrl} alt={`Page ${idx + 1}`} className="w-full h-full object-cover" />
+                  <div className="absolute bottom-0 inset-x-0 bg-slate-900/80 text-[10px] text-white font-bold py-0.5 text-center font-bengali">
+                    পৃষ্ঠা {idx + 1}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveImage(idx);
+                    }}
+                    title="এই ছবিটি বাদ দিন"
+                    className="absolute top-1 right-1 w-5 h-5 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center shadow-xs"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+
+              {/* Add More Thumbnail Tile */}
+              {uploadedImages.length < 8 && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="shrink-0 w-20 h-24 rounded-lg border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 flex flex-col items-center justify-center text-slate-500 hover:text-emerald-600 transition-colors text-xs font-bengali"
+                >
+                  <Plus className="w-5 h-5 mb-1" />
+                  <span>যোগ করুন</span>
+                </button>
+              )}
+            </div>
+
+            {/* Focused Image View */}
+            {activeImage && (
+              <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5 max-h-[400px] flex items-center justify-center p-2">
+                <img
+                  src={activeImage.dataUrl}
+                  alt={`Selected Page ${selectedPreviewIndex + 1}`}
+                  className="max-h-[380px] w-auto object-contain rounded-lg shadow-xs"
+                />
+                <div className="absolute top-3 left-3 bg-slate-900/80 text-white text-xs px-2.5 py-1 rounded-md font-bengali shadow-xs backdrop-blur-xs">
+                  পৃষ্ঠা {selectedPreviewIndex + 1} অবলোকন করা হচ্ছে
+                </div>
+              </div>
+            )}
 
             {/* Action Button & Extraction Pipeline Status */}
             {!isLoading ? (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
                 <div className="text-sm text-slate-600 font-bengali">
                   নির্বাচিত বিষয়: <span className="font-semibold text-slate-800">{subjectHint}</span>
-                  {selectedFile && ` • আকার: ${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}
+                  {` • মোট পৃষ্ঠা: ${uploadedImages.length} টি`}
                 </div>
 
                 <button
@@ -421,7 +536,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                   className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-2 text-base font-bengali"
                 >
                   <Sparkles className="w-5 h-5 text-emerald-200" />
-                  <span>MCQ এক্সট্রাক্ট করুন ও CBT শুরু করুন</span>
+                  <span>সবগুলো প্রশ্ন এক্সট্র্যাক্ট করুন ({uploadedImages.length} পৃষ্ঠা)</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -431,20 +546,20 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 <div className="text-center mb-5">
                   <div className="inline-block animate-spin w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full mb-2"></div>
                   <h4 className="text-base font-bold text-slate-900 font-bengali">
-                    Quizify AI প্রশ্নপত্র বিশ্লেষণ করছে...
+                    Quizify AI {uploadedImages.length} টি পৃষ্ঠার সকল বিজ্ঞান প্রশ্ন বিশ্লেষণ করছে...
                   </h4>
                   <p className="text-xs text-slate-500 font-bengali">
-                    উচ্চতর নিখুঁততার জন্য বাংলা টেক্সট ও LaTeX সমীকরণ নির্ভুলভাবে রূপান্তর করা হচ্ছে
+                    পদার্থ, রসায়ন, গণিত ও জীববিজ্ঞানের সকল প্রশ্ন ও LaTeX সমীকরণ নির্ভুলভাবে সংগ্রহ করা হচ্ছে
                   </p>
                 </div>
 
                 {/* Step Indicators */}
                 <div className="space-y-2.5 max-w-md mx-auto text-xs sm:text-sm">
                   {[
-                    { step: 1, label: '১. বাংলা হরফ ও উদ্দীপক বিশ্লেষণ করা হচ্ছে' },
-                    { step: 2, label: '২. শিক্ষার্থীর রাফ নোট, পেন্সিলের দাগ ও ওয়াটারমার্ক অপসারণ' },
-                    { step: 3, label: '৩. পদার্থ ও গণিতের LaTeX সমীকরণ ও একক সংরক্ষণ' },
-                    { step: 4, label: '৪. স্ট্যান্ডার্ড CBT ডেটাবেজ ও নির্ভুল উত্তরপত্র তৈরি' },
+                    { step: 1, label: '১. আপলোডকৃত সব পৃষ্ঠার বাংলা হরফ ও কলাম বিশ্লেষণ' },
+                    { step: 2, label: '২. শিক্ষার্থীর পেন্সিলের দাগ, ওয়াটারমার্ক ও অপ্রয়োজনীয় অংশ বাদ দেওয়া' },
+                    { step: 3, label: '৩. গণিত, পদার্থ ও রসায়নের LaTeX সমীকরণ ও বিজ্ঞান প্রশ্ন ফিল্টার' },
+                    { step: 4, label: '৪. সকল প্রশ্নের প্রমিত CBT ডেটাবেজ ও নির্ভুল উত্তরমালা তৈরি' },
                   ].map((item) => (
                     <div
                       key={item.step}
@@ -484,7 +599,6 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             </div>
             
             <div className="flex flex-wrap items-center gap-2 self-end sm:self-center shrink-0">
-              {/* Instant Start CBT Exam - student is never blocked! */}
               <button
                 type="button"
                 id="btn-error-instant-cbt"
@@ -504,7 +618,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 <span>তাৎক্ষণিক CBT টেস্ট শুরু করুন</span>
               </button>
 
-              {previewUrl && (
+              {uploadedImages.length > 0 && (
                 <button
                   type="button"
                   id="btn-error-retry"
@@ -528,11 +642,11 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
               অথবা সরাসরি ডেমো প্রশ্নপত্র দিয়ে টেস্ট করুন:
             </h2>
             <p className="text-[11px] sm:text-xs text-slate-500 font-bengali">
-              বোর্ড ও ভর্তি পরীক্ষার আসল প্রশ্ন দিয়ে তাৎক্ষণিকভাবে CBT পরখ করুন
+              বোর্ড ও ভর্তি পরীক্ষার আসল বিজ্ঞান প্রশ্ন দিয়ে তাৎক্ষণিকভাবে CBT পরখ করুন
             </p>
           </div>
           <span className="self-start sm:self-auto text-[11px] sm:text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border border-emerald-200">
-            {SAMPLE_PACKS.length} টি প্রস্তুতকৃত সেট
+            {SAMPLE_PACKS.length} টি প্রস্তুতকৃত সায়েন্স সেট
           </span>
         </div>
 
@@ -546,7 +660,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             >
               <div>
                 <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700">
+                  <span className="px-2 py-0.5 rounded-md font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
                     {pack.subject}
                   </span>
                   <span className="text-emerald-600 font-medium">
@@ -572,3 +686,4 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     </div>
   );
 };
+

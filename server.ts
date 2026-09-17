@@ -20,8 +20,9 @@ async function generateContentWithFallback(
 ) {
   // Verified active high-availability models
   const candidateModels = [
+    "gemini-2.5-flash",
     "gemini-3.1-flash-lite",
-    "gemini-3.6-flash",
+    "gemini-3-flash-preview",
   ];
 
   let lastError: any = null;
@@ -168,124 +169,140 @@ app.get(["/api/health", "/health"], (_req, res) => {
   });
 });
 
-// MCQ Extraction API endpoint
+// MCQ Extraction API endpoint (supports single image or multiple photos)
 app.post(["/api/extract-mcq", "/extract-mcq"], async (req, res) => {
   try {
-    const { imageBase64, mimeType = "image/jpeg", subjectHint } = req.body;
+    const { imageBase64, imagesBase64, mimeType = "image/jpeg", subjectHint } = req.body;
 
-    if (!imageBase64) {
+    // Support both single image (imageBase64) and multiple images (imagesBase64 array)
+    const rawImagesList: string[] = [];
+    if (Array.isArray(imagesBase64) && imagesBase64.length > 0) {
+      rawImagesList.push(...imagesBase64);
+    } else if (typeof imageBase64 === "string" && imageBase64.trim().length > 0) {
+      rawImagesList.push(imageBase64);
+    }
+
+    if (rawImagesList.length === 0) {
       return res.status(400).json({ error: "Missing imageBase64 data" });
     }
 
-    // Safely strip any data URI prefix (data:image/jpeg;base64, data:application/octet-stream;base64, etc.)
-    let cleanBase64 = imageBase64;
-    if (cleanBase64.includes(",")) {
-      cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
-    }
-    cleanBase64 = cleanBase64.replace(/\s+/g, "");
+    // Prepare and sanitize image parts (up to 8 images per request)
+    const sanitizedImageParts: { data: string; mimeType: string }[] = [];
+    for (const rawImg of rawImagesList.slice(0, 8)) {
+      let cleanBase64 = rawImg;
+      let detectedMime = mimeType;
+      if (cleanBase64.startsWith("data:")) {
+        const mimeMatch = cleanBase64.match(/data:([^;]+);base64,/);
+        if (mimeMatch && mimeMatch[1]) {
+          detectedMime = mimeMatch[1];
+        }
+        cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
+      }
+      cleanBase64 = cleanBase64.replace(/\s+/g, "");
 
-    if (!cleanBase64 || cleanBase64.length < 50) {
-      return res.status(400).json({ error: "অবৈধ বা অসম্পূর্ণ ছবির ডেটা প্রাপ্ত হয়েছে। অনুগ্রহ করে আবার ছবি নির্বাচন করুন।" });
-    }
+      if (!cleanBase64 || cleanBase64.length < 50) continue;
 
-    // Normalize mimeType to a type strictly supported by Google Gemini vision models
-    let normalizedMimeType = "image/jpeg";
-    if (typeof mimeType === "string") {
-      const lower = mimeType.toLowerCase();
+      let normalizedMimeType = "image/jpeg";
+      const lower = (detectedMime || "").toLowerCase();
       if (lower.includes("png")) normalizedMimeType = "image/png";
       else if (lower.includes("webp")) normalizedMimeType = "image/webp";
       else if (lower.includes("heic")) normalizedMimeType = "image/heic";
       else if (lower.includes("heif")) normalizedMimeType = "image/heif";
       else normalizedMimeType = "image/jpeg";
+
+      sanitizedImageParts.push({
+        data: cleanBase64,
+        mimeType: normalizedMimeType,
+      });
+    }
+
+    if (sanitizedImageParts.length === 0) {
+      return res.status(400).json({ error: "অবৈধ বা অসম্পূর্ণ ছবির ডেটা প্রাপ্ত হয়েছে। অনুগ্রহ করে আবার ছবি নির্বাচন করুন।" });
     }
 
     const ai = getGeminiClient();
 
-    const systemPrompt = `You are Quizify AI, the leading AI MCQ Exam Generator for Bangladeshi students preparing for HSC (Higher Secondary Certificate) and University Admission (BUET, Medical, Dhaka University A-Unit, GST, Engineering Question Banks).
+    const systemPrompt = `You are Quizify AI, the premier Bengali MCQ recognition and CBT engine for Bangladeshi HSC Science students (HSC 1st & 2nd Year) and University Admission examinees (BUET, Medical, Dhaka University 'Ka' / A-Unit, GST Science, Engineering).
 
-YOUR CORE TASK:
-Convert the uploaded photo containing MCQ questions into structured, clean, highly accurate quiz data ready for a real Computer Based Test (CBT) system.
+YOUR MISSION:
+1. MAXIMIZE EXTRACTION RECALL (EXTRACT ALL QUESTIONS):
+   - You MUST extract EVERY SINGLE valid MCQ question present across all provided page photos.
+   - If a page contains 15 or 20 questions, DO NOT STOP or summarize after 5 or 10. You must extract all 15 or 20 questions!
+   - Scan every column, section, top, middle, and bottom of every image carefully.
+   - Never skip questions due to image rotation, slight angle, or dense two-column layouts.
 
-STRICT ACCURACY RULES:
-1. BANGLA LANGUAGE:
-   - Preserve Bangla text (বাংলা ভাষা ও হরফ) exactly as written.
-   - Do NOT translate Bangla questions into English unless the question itself is in English.
-   - Retain Bengali options (ক, খ, গ, ঘ) or English options (A, B, C, D).
+2. STRICT SCIENCE SUBJECTS ENFORCEMENT:
+   - ONLY extract questions that belong to the following 4 core science subjects:
+     * "Physics" (পদার্থবিজ্ঞান)
+     * "Chemistry" (রসায়ন)
+     * "Higher Math" (উচ্চতর গণিত)
+     * "Biology" (জীববিজ্ঞান)
+   - Every question's "subject" field MUST be EXACTLY one of: "Physics", "Chemistry", "Higher Math", or "Biology".
+   - If a question is from non-science subjects (e.g. Bangla, English, ICT, General Knowledge, Economics), IGNORE that question. Only transcribe Physics, Chemistry, Higher Math, and Biology questions.
 
-2. SCIENTIFIC CONTENT INTEGRITY:
-   - NEVER lose or simplify mathematical symbols, integrals ($\\int$), summations, limits ($\\lim$), matrices, fractions ($\\frac{a}{b}$), powers, roots, Greek letters ($\\alpha, \\beta, \\gamma, \\lambda, \\theta, \\omega, \\varepsilon_0, \\mu, \\rho, \\sigma, \\Omega$).
-   - NEVER lose chemical formulas (e.g., $\\text{H}_2\\text{SO}_4$, $[\\text{Cu(NH}_3)_4]^{2+}$, organic reaction structures like $\\text{CH}_3\\text{COOH}$).
-   - Format all math and chemistry formulas in standard LaTeX using inline $...$ or display $$...$$ notation.
-   - NEVER lose physical units (e.g. $\\text{ms}^{-1}$, $\\text{ms}^{-2}$, $\\text{N/m}$, $\\text{J}$, $\\text{eV}$, $\\text{mol/L}$, $\\text{rad/s}$).
+3. BANGLA LANGUAGE & EXACT NOTATION:
+   - Transcribe Bengali text (বাংলা হরফ) faithfully with proper spelling.
+   - Retain option labels (ক, খ, গ, ঘ) or (A, B, C, D).
+   - Format all mathematical equations, variables, and chemical formulas into standard LaTeX ($...$ inline or $$...$$ display).
+   - Preserve physical units ($\\text{ms}^{-1}$, $\\text{J}$, $\\text{N}$, $\\text{mol/L}$, $\\text{T}$, $\\text{Hz}$, $\\Omega$, $\\mu\\text{F}$, $\\text{rad/s}$, etc.).
+   - Preserve stems / scenarios (উদ্দীপক) in the "context" field, and multi-statement Roman numeral items (i, ii, iii) accurately.
 
-3. REMOVE IRRELEVANT CONTENT & NOISE:
-   - IGNORE student handwritten notes, pencil calculations, scribbles, and rough sketches on margins.
-   - IGNORE tick marks, pen markings, or circle fills made by previous students! Solve the question independently using actual scientific facts according to NCTB/HSC standard curriculum.
-   - IGNORE page numbers, publication watermarks (e.g., Udvash, Retina, Royal, Panjeree, Jupiter, Model Test headers/footers).
+4. REMOVE NOISE & SOLVE INDEPENDENTLY:
+   - IGNORE student handwritten pencil/pen markings, previous tick marks, crossed-out notes, or watermarks.
+   - Solve each question scientifically according to NCTB/HSC curriculum to determine the true correct answer ("correctOptionId").
 
-4. STEM & MULTI-PART QUESTIONS (উদ্দীপক ও বহুপদী সমাপ্তিসূচক):
-   - If questions share a common scenario (উদ্দীপক বা তথ্য), place the scenario in the "context" field.
-   - If a question has Roman numerals (i, ii, iii), preserve the statements clearly in the question or context text, and format options accordingly (e.g., i ও ii, i ও iii, ইত্যাদি).
+5. STEP-BY-STEP EXPLANATION:
+   - Provide a clear, step-by-step scientific explanation in Bengali for every extracted question.
 
-5. ALWAYS GENERATE COMPLETE QUIZ:
-   - If explicit 4-option MCQs are present in the image, transcribe them with high fidelity.
-   - If the image contains questions with missing options, short questions, or textbook content, intelligently construct standard 4-option HSC/Admission-grade MCQs based on the content shown.
-   - ALWAYS return between 3 to 15 high-quality questions. Never return an empty questions list.
-
-6. LOW CONFIDENCE & REVIEW:
-   - If any text is partially cropped, blurry, or ambiguous, set "needsReview": true and provide a specific explanation in "reviewReason". Otherwise set false.
-
-7. EXPLANATION:
-   - For every question, write an authentic, step-by-step scientific explanation in Bangla/English explaining the formula, derivation, or concept for CBT review mode.
-
-RETURN STRICT JSON FORMAT:
+RETURN STRICT JSON FORMAT (No extra text outside JSON):
 {
-  "detectedSubject": "Physics" | "Chemistry" | "Higher Math" | "Biology" | "General Science" | "Admission Question Bank" | "Other",
+  "detectedSubject": "Physics" | "Chemistry" | "Higher Math" | "Biology",
   "totalQuestions": number,
   "questions": [
     {
       "id": string (unique, e.g. "q_1"),
       "questionNumber": number,
-      "subject": "Physics" | "Chemistry" | "Higher Math" | "Biology" | "General Science" | "Admission Question Bank" | "Other",
-      "topic": string (optional, e.g. "তরঙ্গ", "গুণগত রসায়ন", "ক্যালকুলাস"),
+      "subject": "Physics" | "Chemistry" | "Higher Math" | "Biology",
+      "topic": string (e.g. "স্থির তড়িৎ", "জৈব রসায়ন", "ক্যালকুলাস", "কোষ ও এর গঠন"),
       "context": string (optional stem / উদ্দীপক),
-      "question": string (Bangla/English text with LaTeX math like $\\\\vec{F} = m\\\\vec{a}$),
+      "question": string (Bangla text with LaTeX math like $\\\\vec{F} = m\\\\vec{a}$),
       "options": [
         { "id": string, "label": "ক" | "খ" | "গ" | "ঘ" | "A" | "B" | "C" | "D", "text": string },
         { "id": string, "label": "ক" | "খ" | "গ" | "ঘ" | "A" | "B" | "C" | "D", "text": string },
         { "id": string, "label": "ক" | "খ" | "গ" | "ঘ" | "A" | "B" | "C" | "D", "text": string },
         { "id": string, "label": "ক" | "খ" | "গ" | "ঘ" | "A" | "B" | "C" | "D", "text": string }
       ],
-      "correctOptionId": string (matches the id of the correct option above),
-      "explanation": string (Bengali detailed explanation with formula),
+      "correctOptionId": string (must match the id of the correct option in options array),
+      "explanation": string (Bengali detailed step-by-step explanation with equations),
       "difficulty": "Easy" | "Medium" | "Hard",
-      "sourceExam": string (optional, e.g. "ঢাকা বোর্ড ২০২২", "বুয়েট ২০২০-২১"),
+      "sourceExam": string (optional, e.g. "ঢাকা বোর্ড ২০২৩", "বুয়েট ২০২১"),
       "needsReview": boolean,
       "reviewReason": string (optional)
     }
   ]
 }`;
 
-    const userPromptText = `Analyze this Bangladeshi educational photo carefully.
-Subject preference: ${subjectHint || "Auto-detect from image"}.
-Transcribe all visible MCQ questions, or create high-yield HSC/Admission-level MCQs based directly on the topics/formulas shown.
-Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preserved with precision. Clean out any student handwritten marks or tick marks.`;
+    const userPromptText = `Examine all ${sanitizedImageParts.length} uploaded photo(s) of exam question papers.
+Subject preference: ${subjectHint || "Auto-detect (Physics, Chemistry, Higher Math, or Biology)"}.
+CRITICAL INSTRUCTIONS:
+1. Extract ALL visible MCQ questions without truncating or skipping (e.g., if there are 20 questions across the page columns, transcribe all 20 questions!).
+2. ONLY include questions for Science subjects: "Physics", "Chemistry", "Higher Math", or "Biology".
+3. Clean away any student pencil marks, rough notes, or circled options; solve each question using authentic science laws.
+4. Output valid JSON with all questions enumerated.`;
+
+    const userParts: any[] = sanitizedImageParts.map((part) => ({
+      inlineData: {
+        data: part.data,
+        mimeType: part.mimeType,
+      },
+    }));
+    userParts.push({ text: userPromptText });
 
     const { response, usedModel } = await generateContentWithFallback(ai, {
       contents: [
         {
           role: "user",
-          parts: [
-            {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: normalizedMimeType,
-              },
-            },
-            {
-              text: userPromptText,
-            },
-          ],
+          parts: userParts,
         },
       ],
       config: {
@@ -293,7 +310,7 @@ Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preser
         responseMimeType: "application/json",
         temperature: 0.1, // low temperature for maximum OCR fidelity
       },
-    });
+    }, 45000); // 45s timeout for multi-image / full page batches
 
     console.log(`[MCQ Extraction] Successfully extracted questions using model: ${usedModel}`);
 
@@ -305,8 +322,29 @@ Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preser
       parsedData.questions = [];
     }
 
-    // Ensure options have clean IDs and consistent structure
-    parsedData.questions = parsedData.questions.map((q: any, index: number) => {
+    // Allowed subjects whitelist strictly: Physics, Chemistry, Higher Math, Biology
+    const validScienceSubjects = ["Physics", "Chemistry", "Higher Math", "Biology"];
+    const normalizeScienceSubject = (rawSub: any, fallbackSub: string): "Physics" | "Chemistry" | "Higher Math" | "Biology" => {
+      if (typeof rawSub === "string") {
+        const s = rawSub.trim();
+        if (/physic|পদার্থ/i.test(s)) return "Physics";
+        if (/chem|রসায়ন/i.test(s)) return "Chemistry";
+        if (/math|গণিত/i.test(s)) return "Higher Math";
+        if (/bio|জীব/i.test(s)) return "Biology";
+      }
+      return validScienceSubjects.includes(fallbackSub) ? (fallbackSub as any) : "Physics";
+    };
+
+    const overallDetected = normalizeScienceSubject(
+      parsedData.detectedSubject || subjectHint,
+      "Physics"
+    );
+    parsedData.detectedSubject = overallDetected;
+
+    // Filter and sanitize questions: only keep science subjects, ensure 4 options & correct IDs
+    const sanitizedQuestions: any[] = [];
+    parsedData.questions.forEach((q: any, index: number) => {
+      const qSub = normalizeScienceSubject(q.subject, overallDetected);
       const qId = q.id || `q_${index + 1}`;
       const options = Array.isArray(q.options)
         ? q.options.map((opt: any, optIdx: number) => ({
@@ -323,7 +361,7 @@ Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preser
         const matchedByLabel = options.find(
           (o: any) =>
             o.label === correctOptionId ||
-            (correctOptionId && o.label.toLowerCase() === correctOptionId.toLowerCase())
+            (correctOptionId && String(o.label).toLowerCase() === String(correctOptionId).toLowerCase())
         );
         if (matchedByLabel) {
           correctOptionId = matchedByLabel.id;
@@ -332,23 +370,24 @@ Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preser
         }
       }
 
-      return {
+      sanitizedQuestions.push({
         id: qId,
-        questionNumber: q.questionNumber || index + 1,
-        subject: q.subject || parsedData.detectedSubject || "General Science",
+        questionNumber: sanitizedQuestions.length + 1,
+        subject: qSub,
         topic: q.topic || "",
         context: q.context || "",
-        question: q.question || `প্রশ্ন নং ${index + 1}`,
+        question: q.question || `প্রশ্ন নং ${sanitizedQuestions.length + 1}`,
         options,
         correctOptionId,
-        explanation: q.explanation || "এই প্রশ্নের সমাধান ও ব্যাখ্যা সঠিক ধারণার উপর ভিত্তি করে তৈরি।",
+        explanation: q.explanation || "এই প্রশ্নের সমাধান ও ব্যাখ্যা বৈজ্ঞানিক সূত্রের উপর ভিত্তি করে তৈরি।",
         difficulty: q.difficulty || "Medium",
         sourceExam: q.sourceExam || "",
         needsReview: Boolean(q.needsReview),
         reviewReason: q.reviewReason || "",
-      };
+      });
     });
 
+    parsedData.questions = sanitizedQuestions;
     parsedData.totalQuestions = parsedData.questions.length;
 
     return res.json(parsedData);
@@ -356,16 +395,18 @@ Ensure all Bangla text, LaTeX equations, chemical formulas, and units are preser
     console.error("Error in /api/extract-mcq vision pipeline:", error?.message || error);
 
     // INTELLIGENT RECOVERY FALLBACK:
-    // If vision extraction failed (e.g. mobile photo aspect ratio, dark lighting, or Google vision timeout),
-    // synthesize high-quality, authentic questions for the selected subject so the student is NEVER blocked!
+    // If vision extraction failed (e.g. timeout or corrupted file), synthesize science questions
     try {
-      console.log("[MCQ Extraction Fallback] Synthesizing authentic subject CBT questions...");
+      console.log("[MCQ Extraction Fallback] Synthesizing authentic Science CBT questions...");
       const ai = getGeminiClient();
-      const targetSubject = req.body?.subjectHint && req.body.subjectHint !== "Auto-detect" 
-        ? req.body.subjectHint 
-        : "Higher Math";
+      let targetSubject = "Physics";
+      const hint = req.body?.subjectHint;
+      if (hint && /chem|রসায়ন/i.test(hint)) targetSubject = "Chemistry";
+      else if (hint && /math|গণিত/i.test(hint)) targetSubject = "Higher Math";
+      else if (hint && /bio|জীব/i.test(hint)) targetSubject = "Biology";
+      else if (hint && /physic|পদার্থ/i.test(hint)) targetSubject = "Physics";
 
-      const fallbackPrompt = `Generate 5 authentic Bangladeshi HSC Board & University Admission (BUET/DU/Medical) CBT MCQs for the subject '${targetSubject}'.
+      const fallbackPrompt = `Generate 5 authentic Bangladeshi HSC Science Board & University Admission (BUET/DU Ka/Medical) CBT MCQs for the science subject '${targetSubject}'.
 All questions must include precise Bengali text, 4 options (labelled ক, খ, গ, ঘ), one correct answer, and clear step-by-step mathematical/conceptual explanations with LaTeX math ($...$).
 Return ONLY a valid JSON object matching:
 {
@@ -378,7 +419,7 @@ Return ONLY a valid JSON object matching:
       "subject": "${targetSubject}",
       "topic": "প্রধান অধ্যায়",
       "context": "",
-      "question": "বাংলায় প্রমিত প্রশ্ন...",
+      "question": "বাংলায় প্রমিত বিজ্ঞান প্রশ্ন...",
       "options": [
         { "id": "fb_1_opt_1", "label": "ক", "text": "অপশন ১" },
         { "id": "fb_1_opt_2", "label": "খ", "text": "অপশন ২" },
@@ -406,7 +447,7 @@ Return ONLY a valid JSON object matching:
       if (textGen && textGen.text) {
         const parsedFallback = robustParseAiJson(textGen.text);
         if (parsedFallback.questions && parsedFallback.questions.length > 0) {
-          parsedFallback.fallbackNotice = "ছবির জটিলতার কারণে আপনার বিষয়ের প্রমিত বোর্ড ও ভর্তি পরীক্ষার স্ট্যান্ডার্ড CBT প্রশ্নপত্র প্রস্তুত করা হয়েছে।";
+          parsedFallback.fallbackNotice = "ছবির জটিলতার কারণে আপনার বিজ্ঞান বিষয়ের প্রমিত বোর্ড ও ভর্তি পরীক্ষার স্ট্যান্ডার্ড CBT প্রশ্নপত্র প্রস্তুত করা হয়েছে।";
           console.log(`[MCQ Extraction Fallback] Successfully served ${parsedFallback.questions.length} fallback questions!`);
           return res.json(parsedFallback);
         }
