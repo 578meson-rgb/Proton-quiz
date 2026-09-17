@@ -160,7 +160,7 @@ function getGeminiClient(): GoogleGenAI {
 }
 
 // Health check endpoint
-app.get("/api/health", (_req, res) => {
+app.get(["/api/health", "/health"], (_req, res) => {
   res.json({
     status: "ok",
     service: "Quizify AI Bangladesh Backend",
@@ -170,7 +170,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 // MCQ Extraction API endpoint
-app.post("/api/extract-mcq", async (req, res) => {
+app.post(["/api/extract-mcq", "/extract-mcq"], async (req, res) => {
   try {
     const { imageBase64, mimeType = "image/jpeg", subjectHint } = req.body;
 
@@ -447,7 +447,7 @@ app.use((err: any, _req: express.Request, res: express.Response, next: express.N
 });
 
 // AI Tutor / Step-by-Step Question Help
-app.post("/api/tutor-explain", async (req, res) => {
+app.post(["/api/tutor-explain", "/tutor-explain"], async (req, res) => {
   try {
     const { question, options, selectedOption, correctOption, userQuery } = req.body;
     const ai = getGeminiClient();
@@ -496,4 +496,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start standalone HTTP server when not running in Vercel Serverless environment
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
