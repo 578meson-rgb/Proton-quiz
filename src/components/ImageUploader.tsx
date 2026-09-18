@@ -14,7 +14,8 @@ import {
   Eye,
   Plus,
   Trash2,
-  Images
+  Images,
+  Clock
 } from 'lucide-react';
 import { SubjectType, MCQQuestion } from '../types';
 import { SAMPLE_PACKS } from '../data/sampleQuestions';
@@ -39,12 +40,27 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<number>(0);
   const [subjectHint, setSubjectHint] = useState<SubjectType | 'Auto-detect'>('Auto-detect');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Active timer during extraction so students see real-time progress
+  useEffect(() => {
+    let timer: any;
+    if (isLoading) {
+      setElapsedSeconds(0);
+      timer = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setElapsedSeconds(0);
+    }
+    return () => clearInterval(timer);
+  }, [isLoading]);
 
   // Clipboard paste support (e.g. Ctrl+V screenshots)
   useEffect(() => {
@@ -82,8 +98,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           clearTimeout(safetyTimer);
           try {
             URL.revokeObjectURL(objectUrl);
-            // 1600px max dimension: crisp Bengali font, equations, fractions & 2-column questions
-            const MAX_DIM = 1600;
+            // 2000px max dimension: ensures small Bengali font, sub-indices, fractions & 2-column question sheets stay pin-sharp
+            const MAX_DIM = 2000;
             let width = img.width;
             let height = img.height;
 
@@ -110,8 +126,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Compress to ~160KB-220KB JPEG for fast transfer & high OCR recognition
-            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            // High clarity compression for full-page Bengali exam papers
+            const compressed = canvas.toDataURL('image/jpeg', 0.88);
             resolve(compressed);
           } catch {
             fallbackWithFileReader();
@@ -221,10 +237,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     setErrorMsg(null);
     setCurrentStep(1);
 
-    // Dynamic progress indicators for multi-image processing
-    const stepTimer1 = setTimeout(() => setCurrentStep(2), 1500);
-    const stepTimer2 = setTimeout(() => setCurrentStep(3), 3200);
-    const stepTimer3 = setTimeout(() => setCurrentStep(4), 5400);
+    // Realistic step progression for full 25-40+ question extraction
+    const stepTimer1 = setTimeout(() => setCurrentStep(2), 6000);
+    const stepTimer2 = setTimeout(() => setCurrentStep(3), 16000);
+    const stepTimer3 = setTimeout(() => setCurrentStep(4), 30000);
 
     try {
       const response = await fetch('/api/extract-mcq', {
@@ -542,14 +558,21 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
               </div>
             ) : (
               /* Animated Pipeline Progress */
-              <div className="py-6 px-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+              <div className="py-6 px-4 sm:px-6 bg-emerald-50/60 rounded-xl border border-emerald-200">
                 <div className="text-center mb-5">
-                  <div className="inline-block animate-spin w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full mb-2"></div>
-                  <h4 className="text-base font-bold text-slate-900 font-bengali">
+                  <div className="inline-block animate-spin w-9 h-9 border-3 border-emerald-600 border-t-transparent rounded-full mb-2"></div>
+                  
+                  {/* Zero-Skipping Patient Extraction Notice */}
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-emerald-300 text-emerald-800 rounded-full text-xs font-semibold shadow-2xs mb-2.5">
+                    <Clock className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+                    <span>সময়: {elapsedSeconds} সেকেন্ড • কোনো প্রশ্ন বাদ না দিয়ে সকল প্রশ্ন এক্সট্র্যাক্ট করা হচ্ছে</span>
+                  </div>
+
+                  <h4 className="text-base sm:text-lg font-bold text-slate-900 font-bengali">
                     Quizify AI {uploadedImages.length} টি পৃষ্ঠার সকল বিজ্ঞান প্রশ্ন বিশ্লেষণ করছে...
                   </h4>
-                  <p className="text-xs text-slate-500 font-bengali">
-                    পদার্থ, রসায়ন, গণিত ও জীববিজ্ঞানের সকল প্রশ্ন ও LaTeX সমীকরণ নির্ভুলভাবে সংগ্রহ করা হচ্ছে
+                  <p className="text-xs sm:text-sm text-slate-600 font-bengali max-w-lg mx-auto mt-1 leading-relaxed">
+                    AI তাড়াহুড়ো না করে প্রশ্নপত্রের প্রতিটি কলাম ও পৃষ্ঠার সকল প্রশ্ন (২৫-৪০+ টি) নির্ভুলভাবে বের করছে। এতে কিছুটা সময় লাগতে পারে, দয়া করে অপেক্ষা করুন।
                   </p>
                 </div>
 
@@ -558,8 +581,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                   {[
                     { step: 1, label: '১. আপলোডকৃত সব পৃষ্ঠার বাংলা হরফ ও কলাম বিশ্লেষণ' },
                     { step: 2, label: '২. শিক্ষার্থীর পেন্সিলের দাগ, ওয়াটারমার্ক ও অপ্রয়োজনীয় অংশ বাদ দেওয়া' },
-                    { step: 3, label: '৩. গণিত, পদার্থ ও রসায়নের LaTeX সমীকরণ ও বিজ্ঞান প্রশ্ন ফিল্টার' },
-                    { step: 4, label: '৪. সকল প্রশ্নের প্রমিত CBT ডেটাবেজ ও নির্ভুল উত্তরমালা তৈরি' },
+                    { step: 3, label: '৩. গণিত, পদার্থ ও রসায়নের LaTeX সমীকরণ ও বিজ্ঞান সূত্র সমাধান' },
+                    { step: 4, label: '৪. সকল প্রশ্ন (একটিও বাদ না দিয়ে) নিয়ে লাইভ CBT কুইজ প্রস্তুত' },
                   ].map((item) => (
                     <div
                       key={item.step}

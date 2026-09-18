@@ -16,7 +16,7 @@ async function generateContentWithFallback(
     contents: any;
     config?: any;
   },
-  timeoutMs = 20000
+  timeoutMs = 120000
 ) {
   // Verified active high-availability models
   const candidateModels = [
@@ -224,35 +224,33 @@ app.post(["/api/extract-mcq", "/extract-mcq"], async (req, res) => {
 
     const systemPrompt = `You are Quizify AI, the premier Bengali MCQ recognition and CBT engine for Bangladeshi HSC Science students (HSC 1st & 2nd Year) and University Admission examinees (BUET, Medical, Dhaka University 'Ka' / A-Unit, GST Science, Engineering).
 
-YOUR MISSION:
-1. MAXIMIZE EXTRACTION RECALL (EXTRACT ALL QUESTIONS):
+CRITICAL MISSION & TOP-PRIORITY INSTRUCTIONS:
+
+1. ABSOLUTE ZERO-OMISSION RULE (DO NOT HURRY — EXTRACT EVERY SINGLE QUESTION):
    - You MUST extract EVERY SINGLE valid MCQ question present across all provided page photos.
-   - If a page contains 15 or 20 questions, DO NOT STOP or summarize after 5 or 10. You must extract all 15 or 20 questions!
-   - Scan every column, section, top, middle, and bottom of every image carefully.
-   - Never skip questions due to image rotation, slight angle, or dense two-column layouts.
+   - If the uploaded photos contain 25, 30, 35, 40, or 50 questions, YOU MUST EXTRACT EVERY SINGLE ONE (e.g. all 30+ questions)!
+   - You are STRICTLY FORBIDDEN from stopping after 2, 5, or 10 questions.
+   - You are STRICTLY FORBIDDEN from sampling, summarizing, or truncating.
+   - USER NOTICE: The user explicitly states: "Do not hurry. Extract all questions and don't skip a single one. It will take time and user is waiting."
+   - Methodically inspect every image from top to bottom, scanning both the left column and the right column, question blocks, and subsequent pages.
+   - Transcribe all numbered questions sequentially (1, 2, 3, 4, ... up to the last question on the last page).
 
-2. STRICT SCIENCE SUBJECTS ENFORCEMENT:
-   - ONLY extract questions that belong to the following 4 core science subjects:
-     * "Physics" (পদার্থবিজ্ঞান)
-     * "Chemistry" (রসায়ন)
-     * "Higher Math" (উচ্চতর গণিত)
-     * "Biology" (জীববিজ্ঞান)
-   - Every question's "subject" field MUST be EXACTLY one of: "Physics", "Chemistry", "Higher Math", or "Biology".
-   - If a question is from non-science subjects (e.g. Bangla, English, ICT, General Knowledge, Economics), IGNORE that question. Only transcribe Physics, Chemistry, Higher Math, and Biology questions.
+2. CONCISE EXPLANATIONS TO PRESERVE TOKEN SPACE:
+   - Provide a clear, accurate, 1-2 sentence Bengali scientific explanation for each question with its core formula.
+   - Keep explanations concise so that all 30+ or 50 questions fit easily within the output token limit without getting truncated.
 
-3. BANGLA LANGUAGE & EXACT NOTATION:
-   - Transcribe Bengali text (বাংলা হরফ) faithfully with proper spelling.
-   - Retain option labels (ক, খ, গ, ঘ) or (A, B, C, D).
-   - Format all mathematical equations, variables, and chemical formulas into standard LaTeX ($...$ inline or $$...$$ display).
-   - Preserve physical units ($\\text{ms}^{-1}$, $\\text{J}$, $\\text{N}$, $\\text{mol/L}$, $\\text{T}$, $\\text{Hz}$, $\\Omega$, $\\mu\\text{F}$, $\\text{rad/s}$, etc.).
+3. SUBJECT RECOGNITION (NEVER DISCARD QUESTIONS):
+   - Categorize each question into: "Physics", "Chemistry", "Higher Math", or "Biology".
+   - If a question is from ICT (তথ্য ও যোগাযোগ প্রযুক্তি) or General Science / Math, classify it into the most appropriate category (e.g., Logic gates/circuits -> "Physics", algorithms/binary/boolean -> "Higher Math") and EXTRACT IT. DO NOT throw away or ignore valid test questions. Every MCQ in the test paper must be in the quiz!
+
+4. BANGLA LANGUAGE & EXACT SCIENTIFIC NOTATION:
+   - Transcribe Bengali text (বাংলা হরফ) faithfully with proper spelling and punctuation.
+   - Retain option labels (ক, খ, গ, ঘ) or (A, B, C, D) and option text.
+   - Format all mathematical equations, fractions, square roots, and chemical equations using clean standard LaTeX ($...$).
    - Preserve stems / scenarios (উদ্দীপক) in the "context" field, and multi-statement Roman numeral items (i, ii, iii) accurately.
 
-4. REMOVE NOISE & SOLVE INDEPENDENTLY:
-   - IGNORE student handwritten pencil/pen markings, previous tick marks, crossed-out notes, or watermarks.
-   - Solve each question scientifically according to NCTB/HSC curriculum to determine the true correct answer ("correctOptionId").
-
-5. STEP-BY-STEP EXPLANATION:
-   - Provide a clear, step-by-step scientific explanation in Bengali for every extracted question.
+5. SOLVE ACCURATELY & CLEAN NOISE:
+   - Disregard student pencil marks, rough pen scratches, or circled answers. Solve each question scientifically using official NCTB curriculum principles to set "correctOptionId".
 
 RETURN STRICT JSON FORMAT (No extra text outside JSON):
 {
@@ -273,7 +271,7 @@ RETURN STRICT JSON FORMAT (No extra text outside JSON):
         { "id": string, "label": "ক" | "খ" | "গ" | "ঘ" | "A" | "B" | "C" | "D", "text": string }
       ],
       "correctOptionId": string (must match the id of the correct option in options array),
-      "explanation": string (Bengali detailed step-by-step explanation with equations),
+      "explanation": string (Bengali concise step-by-step explanation with formula),
       "difficulty": "Easy" | "Medium" | "Hard",
       "sourceExam": string (optional, e.g. "ঢাকা বোর্ড ২০২৩", "বুয়েট ২০২১"),
       "needsReview": boolean,
@@ -282,13 +280,15 @@ RETURN STRICT JSON FORMAT (No extra text outside JSON):
   ]
 }`;
 
-    const userPromptText = `Examine all ${sanitizedImageParts.length} uploaded photo(s) of exam question papers.
+    const userPromptText = `Examine all ${sanitizedImageParts.length} uploaded photo(s) of the exam question paper.
 Subject preference: ${subjectHint || "Auto-detect (Physics, Chemistry, Higher Math, or Biology)"}.
-CRITICAL INSTRUCTIONS:
-1. Extract ALL visible MCQ questions without truncating or skipping (e.g., if there are 20 questions across the page columns, transcribe all 20 questions!).
-2. ONLY include questions for Science subjects: "Physics", "Chemistry", "Higher Math", or "Biology".
-3. Clean away any student pencil marks, rough notes, or circled options; solve each question using authentic science laws.
-4. Output valid JSON with all questions enumerated.`;
+
+MANDATORY INSTRUCTIONS:
+1. EXTRACT EVERY SINGLE MCQ QUESTION visible across all pages, columns, and rows without omitting or skipping ANY question.
+2. DO NOT HURRY. DO NOT STOP AFTER 2 OR 5 QUESTIONS.
+3. If there are 30+ questions in the images, you MUST extract ALL 30+ questions in order from question 1 to the end!
+4. Remove any handwritten notes/pencil circles and scientifically solve each question to identify the correct option.
+5. Return the full list of all extracted questions in strict JSON format.`;
 
     const userParts: any[] = sanitizedImageParts.map((part) => ({
       inlineData: {
@@ -309,8 +309,12 @@ CRITICAL INSTRUCTIONS:
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
         temperature: 0.1, // low temperature for maximum OCR fidelity
+        maxOutputTokens: 16384, // high token budget to ensure 30+ to 50 questions fit completely
+        thinkingConfig: {
+          thinkingBudget: 0, // disable internal thinking to ensure 100% of tokens and speed go to producing all 30+ questions in JSON
+        },
       },
-    }, 45000); // 45s timeout for multi-image / full page batches
+    }, 120000); // 120s timeout for complete 30-50 question extraction batches
 
     console.log(`[MCQ Extraction] Successfully extracted questions using model: ${usedModel}`);
 
