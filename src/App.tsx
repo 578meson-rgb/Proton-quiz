@@ -5,6 +5,8 @@ import { QuestionReviewList } from './components/QuestionReviewList';
 import { CbtExamRoom } from './components/CbtExamRoom';
 import { ExamResults } from './components/ExamResults';
 import { PrintableQuestionPaper } from './components/PrintableQuestionPaper';
+import { SettingsModal } from './components/SettingsModal';
+import { MobileCompanion } from './components/MobileCompanion';
 import { MCQQuestion, SubjectType, ExamSettings, ExamSubmission } from './types';
 import { SAMPLE_PACKS } from './data/sampleQuestions';
 
@@ -17,7 +19,7 @@ export default function App() {
     title: 'HSC & Admission CBT Model Test',
     durationMinutes: 15,
     durationSeconds: 15 * 60,
-    secondsPerQuestion: 45,
+    secondsPerQuestion: 40,
     negativeMarking: 0.25,
     marksPerQuestion: 1.0,
     passPercentage: 40,
@@ -26,20 +28,28 @@ export default function App() {
   });
   const [submission, setSubmission] = useState<ExamSubmission | null>(null);
 
+  // Settings & User Guide modal state
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+
+  // Global answers hidden state (default is false: hidden, per user request)
+  const [showAllAnswersGlobal, setShowAllAnswersGlobal] = useState<boolean>(false);
+
   // When image OCR extraction succeeds
   const handleExtractionSuccess = (
     extractedQuestions: MCQQuestion[],
     detectedSubject: SubjectType,
     imageSrc?: string
   ) => {
-    const totalSecs = extractedQuestions.length * 45;
+    const totalSecs = extractedQuestions.length * 40;
     setQuestions(extractedQuestions);
     setSubject(detectedSubject);
     setRawImage(imageSrc);
+    // Answers remain hidden by default
+    setShowAllAnswersGlobal(false);
     setExamSettings((prev) => ({
       ...prev,
       title: `${detectedSubject} - লাইভ CBT মডেল টেস্ট`,
-      secondsPerQuestion: 45,
+      secondsPerQuestion: 40,
       durationSeconds: totalSecs,
       durationMinutes: Math.round((totalSecs / 60) * 10) / 10,
     }));
@@ -51,14 +61,15 @@ export default function App() {
     const pack = SAMPLE_PACKS.find((p) => p.id === packId);
     if (!pack) return;
 
-    const totalSecs = pack.questions.length * 45;
+    const totalSecs = pack.questions.length * 40;
     setQuestions(pack.questions);
     setSubject(pack.subject);
     setRawImage(undefined);
+    setShowAllAnswersGlobal(false);
     setExamSettings((prev) => ({
       ...prev,
       title: `${pack.nameBn} (মডেল টেস্ট)`,
-      secondsPerQuestion: 45,
+      secondsPerQuestion: 40,
       durationSeconds: totalSecs,
       durationMinutes: Math.round((totalSecs / 60) * 10) / 10,
     }));
@@ -97,8 +108,24 @@ export default function App() {
       setQuestions([]);
       setSubmission(null);
       setRawImage(undefined);
+      setShowAllAnswersGlobal(false);
       setCurrentTab('upload');
     }
+  };
+
+  // Scroll to question helper for mobile navigation
+  const handleJumpToQuestion = (index: number) => {
+    if (currentTab !== 'review_questions') {
+      setCurrentTab('review_questions');
+    }
+    setTimeout(() => {
+      const el = document.getElementById(`question-card-${index}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-emerald-500');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-emerald-500'), 1800);
+      }
+    }, 100);
   };
 
   return (
@@ -112,6 +139,7 @@ export default function App() {
           questionCount={questions.length}
           hasExamResults={Boolean(submission)}
           onResetAll={handleResetAll}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       )}
 
@@ -131,6 +159,8 @@ export default function App() {
             rawImage={rawImage}
             onStartExam={handleStartExam}
             onUpdateQuestions={setQuestions}
+            externalShowAnswers={showAllAnswersGlobal}
+            onToggleExternalAnswers={() => setShowAllAnswersGlobal((prev) => !prev)}
           />
         )}
 
@@ -162,6 +192,40 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Mobile Floating Companion (Active on upload, review, results, print) */}
+      {currentTab !== 'cbt' && (
+        <MobileCompanion
+          currentTab={currentTab}
+          questions={questions}
+          showAllAnswers={showAllAnswersGlobal}
+          onToggleAllAnswers={() => setShowAllAnswersGlobal((prev) => !prev)}
+          onStartExam={questions.length > 0 ? () => handleStartExam(examSettings, questions) : undefined}
+          onOpenGuide={() => setIsSettingsOpen(true)}
+          onJumpToQuestion={handleJumpToQuestion}
+        />
+      )}
+
+      {/* Settings & User Guide Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        defaultSecondsPerQuestion={examSettings.secondsPerQuestion}
+        onUpdateDefaultSeconds={(secs) => {
+          setExamSettings((prev) => ({
+            ...prev,
+            secondsPerQuestion: secs,
+            durationSeconds: (questions.length || 25) * secs,
+            durationMinutes: Math.round((((questions.length || 25) * secs) / 60) * 10) / 10,
+          }));
+        }}
+        defaultNegativeMarking={examSettings.negativeMarking}
+        onUpdateDefaultNegative={(val) => {
+          setExamSettings((prev) => ({ ...prev, negativeMarking: val }));
+        }}
+        defaultHideAnswers={!showAllAnswersGlobal}
+        onUpdateDefaultHideAnswers={(hide) => setShowAllAnswersGlobal(!hide)}
+      />
 
       {/* Footer (Hidden during CBT and print) */}
       {currentTab !== 'cbt' && (

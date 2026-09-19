@@ -228,7 +228,7 @@ export const CbtExamRoom: React.FC<CbtExamRoomProps> = ({
                 {settings.title}
               </h2>
               <p className="text-xs text-slate-400">
-                মান: +{settings.marksPerQuestion} • নেগেটিভ: -{settings.negativeMarking} • প্রতি প্রশ্ন: {settings.secondsPerQuestion || 45} সে
+                মান: +{settings.marksPerQuestion} • নেগেটিভ: -{settings.negativeMarking} • প্রতি প্রশ্ন: {settings.secondsPerQuestion || 40} সে
               </p>
             </div>
           </div>

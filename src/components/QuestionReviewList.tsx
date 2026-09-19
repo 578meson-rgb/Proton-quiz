@@ -12,7 +12,9 @@ import {
   Sparkles, 
   HelpCircle,
   Shuffle,
-  ShieldAlert
+  ShieldAlert,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { MCQQuestion, ExamSettings, SubjectType } from '../types';
 import { MathRenderer } from './MathRenderer';
@@ -23,6 +25,8 @@ interface QuestionReviewListProps {
   rawImage?: string;
   onStartExam: (settings: ExamSettings, filteredQuestions: MCQQuestion[]) => void;
   onUpdateQuestions: (updated: MCQQuestion[]) => void;
+  externalShowAnswers?: boolean;
+  onToggleExternalAnswers?: () => void;
 }
 
 export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
@@ -31,16 +35,33 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
   rawImage,
   onStartExam,
   onUpdateQuestions,
+  externalShowAnswers,
+  onToggleExternalAnswers,
 }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editedQuestion, setEditedQuestion] = useState<MCQQuestion | null>(null);
 
+  // Default is false: answers are hidden right after extraction (as requested by user)
+  const [localShowAllAnswers, setLocalShowAllAnswers] = useState<boolean>(false);
+  const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
+
+  const showAllAnswers = externalShowAnswers !== undefined ? externalShowAnswers : localShowAllAnswers;
+
+  const handleToggleAllAnswers = () => {
+    if (onToggleExternalAnswers) {
+      onToggleExternalAnswers();
+    } else {
+      setLocalShowAllAnswers((prev) => !prev);
+    }
+    setRevealedAnswers({});
+  };
+
   // Exam Configuration Settings
   const [examTitle, setExamTitle] = useState<string>(`${subject} - লাইভ মডেল টেস্ট`);
-  const [secondsPerQuestion, setSecondsPerQuestion] = useState<number>(45);
+  const [secondsPerQuestion, setSecondsPerQuestion] = useState<number>(40);
   const [useCustomDuration, setUseCustomDuration] = useState<boolean>(false);
   const [customMinutes, setCustomMinutes] = useState<number>(
-    Math.max(1, Math.ceil((questions.length * 45) / 60))
+    Math.max(1, Math.ceil((questions.length * 40) / 60))
   );
   const [negativeMarking, setNegativeMarking] = useState<number>(0.25);
   const [mode, setMode] = useState<'cbt_exam' | 'practice'>('cbt_exam');
@@ -176,12 +197,12 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
             />
           </div>
 
-          {/* 45 Seconds Per MCQ Time Calculator */}
+          {/* 40 Seconds Per MCQ Time Calculator */}
           <div className="sm:col-span-2 lg:col-span-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-bold text-slate-700 font-bengali flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                <span>সময় গণনা (প্রতি MCQ ৪৫ সেকেন্ড)</span>
+                <span>সময় গণনা (প্রতি MCQ ৪০ সেকেন্ড)</span>
               </label>
               <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full font-bengali">
                 মোট: {formatBanglaDuration(totalCalculatedSeconds)}
@@ -193,8 +214,9 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
                 <div className="flex items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1 sm:gap-1.5">
                     {[
-                      { label: '৪৫ সে (স্ট্যান্ডার্ড)', val: 45 },
+                      { label: '৪০ সে (স্ট্যান্ডার্ড)', val: 40 },
                       { label: '৩০ সে (কুইক)', val: 30 },
+                      { label: '৪৫ সে (প্রমিত)', val: 45 },
                       { label: '৬০ সে (১ মিনিট)', val: 60 },
                     ].map((preset) => (
                       <button
@@ -334,6 +356,43 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
         </div>
       </div>
 
+      {/* Question List Control & Eye (Hide/Show) Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-4 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 font-bengali">
+            প্রশ্নসমূহ ({toBanglaNum(questions.length)} টি)
+          </h2>
+          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-bengali">
+            {showAllAnswers ? 'সব উত্তর দৃশ্যমান' : 'ডিফল্ট: উত্তর লুকানো'}
+          </span>
+        </div>
+
+        {/* Global Eye Toggle Button */}
+        <button
+          type="button"
+          id="btn-toggle-all-answers"
+          onClick={handleToggleAllAnswers}
+          className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-2xs font-bengali ${
+            showAllAnswers
+              ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300'
+          }`}
+          title={showAllAnswers ? "সব উত্তর গোপন করুন" : "সব উত্তর দেখুন"}
+        >
+          {showAllAnswers ? (
+            <>
+              <EyeOff className="w-4 h-4 text-amber-700" />
+              <span>সব উত্তর লুকান (Hide Answers)</span>
+            </>
+          ) : (
+            <>
+              <Eye className="w-4 h-4 text-emerald-700" />
+              <span>সব উত্তর দেখুন (Show Answers)</span>
+            </>
+          )}
+        </button>
+      </div>
+
       {/* Questions List */}
       <div className="space-y-4">
         {questions.map((q, idx) => {
@@ -434,16 +493,21 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
             );
           }
 
+          const isAnswerVisible = revealedAnswers[q.id] !== undefined
+            ? revealedAnswers[q.id]
+            : showAllAnswers;
+
           return (
             <div
               key={q.id}
-              className={`bg-white rounded-2xl border p-5 sm:p-6 transition-all ${
+              id={`question-card-${idx}`}
+              className={`bg-white rounded-2xl border p-5 sm:p-6 transition-all scroll-mt-24 ${
                 q.needsReview ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 shadow-2xs'
               }`}
             >
               {/* Question Header */}
               <div className="flex items-start justify-between gap-4 mb-3">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-2">
                   <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-bold text-sm flex items-center justify-center font-mono-code shadow-xs">
                     {idx + 1}
                   </span>
@@ -459,11 +523,40 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
                   )}
                 </div>
 
-                <div className="flex items-center gap-1 text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  {/* Eye Toggle for this individual question */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRevealedAnswers((prev) => ({
+                        ...prev,
+                        [q.id]: !isAnswerVisible,
+                      }));
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all font-bengali ${
+                      isAnswerVisible
+                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    }`}
+                    title={isAnswerVisible ? "উত্তর লুকান" : "উত্তর দেখুন"}
+                  >
+                    {isAnswerVisible ? (
+                      <>
+                        <EyeOff className="w-3.5 h-3.5 text-amber-600" />
+                        <span className="hidden sm:inline">লুকান</span>
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="hidden sm:inline">উত্তর দেখুন</span>
+                      </>
+                    )}
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleEditStart(idx)}
-                    className="p-1.5 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                    className="p-1.5 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-slate-400"
                     title="প্রশ্ন এডিট করুন"
                   >
                     <Edit3 className="w-4 h-4" />
@@ -471,7 +564,7 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
                   <button
                     type="button"
                     onClick={() => handleDeleteQuestion(idx)}
-                    className="p-1.5 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                    className="p-1.5 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors text-slate-400"
                     title="প্রশ্ন মুছে ফেলুন"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -506,19 +599,21 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">
                 {q.options.map((opt) => {
                   const isCorrect = opt.id === q.correctOptionId;
+                  const showAsCorrect = isAnswerVisible && isCorrect;
+
                   return (
                     <div
                       key={opt.id}
                       className={`flex items-center gap-3 p-3 rounded-xl border text-sm transition-all font-bengali ${
-                        isCorrect
-                          ? 'bg-emerald-50/80 border-emerald-300 text-emerald-900 font-medium'
-                          : 'bg-white border-slate-200 text-slate-700'
+                        showAsCorrect
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-medium shadow-2xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <span
                         className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs ${
-                          isCorrect
-                            ? 'bg-emerald-600 text-white'
+                          showAsCorrect
+                            ? 'bg-emerald-600 text-white shadow-xs'
                             : 'bg-slate-100 text-slate-600'
                         }`}
                       >
@@ -527,8 +622,8 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
                       <div className="flex-1">
                         <MathRenderer content={opt.text} />
                       </div>
-                      {isCorrect && (
-                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                      {showAsCorrect && (
+                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md shrink-0">
                           সঠিক উত্তর
                         </span>
                       )}
@@ -538,10 +633,32 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
               </div>
 
               {/* Explanation Dropdown / Preview */}
-              {q.explanation && (
-                <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 font-bengali">
-                  <span className="font-bold text-slate-700 mr-1">ব্যাখ্যা:</span>
-                  <MathRenderer content={q.explanation} />
+              {isAnswerVisible ? (
+                q.explanation && (
+                  <div className="pt-3 border-t border-slate-100 text-xs text-slate-600 font-bengali bg-slate-50/70 p-3 rounded-xl">
+                    <span className="font-bold text-slate-800 mr-1">ব্যাখ্যা ও সূত্র:</span>
+                    <MathRenderer content={q.explanation} />
+                  </div>
+                )
+              ) : (
+                <div className="pt-2 text-xs text-slate-500 font-bengali flex items-center justify-between border-t border-slate-100">
+                  <span className="flex items-center gap-1.5 text-slate-400">
+                    <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                    উত্তর লুকানো রয়েছে (দেখতে চোখের আইকনে ট্যাপ করুন)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRevealedAnswers((prev) => ({
+                        ...prev,
+                        [q.id]: true,
+                      }));
+                    }}
+                    className="inline-flex items-center gap-1 text-emerald-600 font-bold hover:underline"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    উত্তর উন্মোচন
+                  </button>
                 </div>
               )}
             </div>
