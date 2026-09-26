@@ -14,10 +14,12 @@ import {
   Shuffle,
   ShieldAlert,
   Eye,
-  EyeOff
+  EyeOff,
+  Bookmark
 } from 'lucide-react';
 import { MCQQuestion, ExamSettings, SubjectType } from '../types';
 import { MathRenderer } from './MathRenderer';
+import { SaveExamModal } from './SaveExamModal';
 
 interface QuestionReviewListProps {
   questions: MCQQuestion[];
@@ -27,6 +29,9 @@ interface QuestionReviewListProps {
   onUpdateQuestions: (updated: MCQQuestion[]) => void;
   externalShowAnswers?: boolean;
   onToggleExternalAnswers?: () => void;
+  activeSavedExamId?: string | null;
+  activeSavedExamName?: string | null;
+  onSavedSuccess?: (savedId: string, savedName: string) => void;
 }
 
 export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
@@ -37,9 +42,16 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
   onUpdateQuestions,
   externalShowAnswers,
   onToggleExternalAnswers,
+  activeSavedExamId,
+  activeSavedExamName,
+  onSavedSuccess,
 }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editedQuestion, setEditedQuestion] = useState<MCQQuestion | null>(null);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState<boolean>(false);
+  const [currentSavedId, setCurrentSavedId] = useState<string | null>(activeSavedExamId || null);
+  const [currentSavedName, setCurrentSavedName] = useState<string | null>(activeSavedExamName || null);
+  const [saveSuccessAlert, setSaveSuccessAlert] = useState<string | null>(null);
 
   // Default is false: answers are hidden right after extraction (as requested by user)
   const [localShowAllAnswers, setLocalShowAllAnswers] = useState<boolean>(false);
@@ -160,7 +172,7 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
             {rawImage && (
               <button
                 type="button"
@@ -170,6 +182,22 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
                 <span>আসল ছবি দেখুন</span>
               </button>
             )}
+
+            {/* Save Exam Button */}
+            <button
+              type="button"
+              id="btn-save-quiz-review"
+              onClick={() => setIsSaveModalOpen(true)}
+              className={`px-4 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 text-sm font-bengali ${
+                currentSavedId
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                  : 'bg-white text-slate-700 border border-slate-300 hover:border-emerald-500 hover:text-emerald-700 shadow-2xs'
+              }`}
+              title="এই প্রশ্ন সেটটি ডিভাইসে সংরক্ষণ করে রাখুন যাতে পরবর্তীতে পুনরায় তৈরি না করতে হয়"
+            >
+              <Bookmark className={`w-4 h-4 ${currentSavedId ? 'fill-emerald-600 text-emerald-600' : 'text-slate-600'}`} />
+              <span>{currentSavedId ? (currentSavedName ? `সংরক্ষিত: ${currentSavedName.slice(0, 15)}...` : 'সংরক্ষিত (আপডেট)') : 'কুইজ সেভ করুন'}</span>
+            </button>
 
             <button
               type="button"
@@ -182,6 +210,14 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Save feedback banner */}
+        {saveSuccessAlert && (
+          <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{saveSuccessAlert}</span>
+          </div>
+        )}
 
         {/* Exam Configuration Parameters */}
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -707,6 +743,36 @@ export const QuestionReviewList: React.FC<QuestionReviewListProps> = ({
           </div>
         </div>
       )}
+
+      {/* Save Exam Modal */}
+      <SaveExamModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        questions={questions}
+        subject={subject}
+        settings={{
+          title: examTitle,
+          durationMinutes: Math.round((totalCalculatedSeconds / 60) * 10) / 10,
+          durationSeconds: totalCalculatedSeconds,
+          secondsPerQuestion: useCustomDuration ? Math.round(totalCalculatedSeconds / (questions.length || 1)) : secondsPerQuestion,
+          negativeMarking,
+          marksPerQuestion: 1.0,
+          passPercentage: 40,
+          shuffleQuestions,
+          mode,
+        }}
+        activeSavedId={currentSavedId}
+        onSavedSuccess={(savedId, savedName) => {
+          setCurrentSavedId(savedId);
+          setCurrentSavedName(savedName);
+          setExamTitle(savedName);
+          setSaveSuccessAlert(`"${savedName}" কুইজটি সফলভাবে সংরক্ষণ করা হয়েছে!`);
+          setTimeout(() => setSaveSuccessAlert(null), 4000);
+          if (onSavedSuccess) {
+            onSavedSuccess(savedId, savedName);
+          }
+        }}
+      />
     </div>
   );
 };

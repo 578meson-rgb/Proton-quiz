@@ -11,15 +11,17 @@ import {
   Settings,
   Menu,
   X,
-  Play
+  Play,
+  Bookmark
 } from 'lucide-react';
 
 interface NavbarProps {
-  currentTab: 'upload' | 'review_questions' | 'cbt' | 'results' | 'print';
-  onSelectTab: (tab: 'upload' | 'review_questions' | 'cbt' | 'results' | 'print') => void;
+  currentTab: 'upload' | 'review_questions' | 'cbt' | 'results' | 'print' | 'saved_exams';
+  onSelectTab: (tab: 'upload' | 'review_questions' | 'cbt' | 'results' | 'print' | 'saved_exams') => void;
   hasQuestions: boolean;
   questionCount: number;
   hasExamResults: boolean;
+  savedExamsCount?: number;
   onResetAll: () => void;
   onOpenSettings?: () => void;
 }
@@ -30,12 +32,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   hasQuestions,
   questionCount,
   hasExamResults,
+  savedExamsCount = 0,
   onResetAll,
   onOpenSettings,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
-  const handleTabClick = (tab: 'upload' | 'review_questions' | 'cbt' | 'results' | 'print') => {
+  const handleTabClick = (tab: 'upload' | 'review_questions' | 'cbt' | 'results' | 'print' | 'saved_exams') => {
     onSelectTab(tab);
     setMobileMenuOpen(false);
   };
@@ -83,6 +86,26 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <UploadCloud className="w-4 h-4" />
               <span className="font-bengali">আপলোড</span>
+            </button>
+
+            {/* Saved Exams Library Tab */}
+            <button
+              id="nav-tab-saved-exams"
+              type="button"
+              onClick={() => handleTabClick('saved_exams')}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                currentTab === 'saved_exams'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Bookmark className="w-4 h-4 text-emerald-600" />
+              <span className="font-bengali">সংরক্ষিত কুইজ</span>
+              {savedExamsCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
+                  {savedExamsCount}
+                </span>
+              )}
             </button>
 
             {hasQuestions && (
@@ -222,6 +245,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>আপলোড</span>
           </button>
 
+          <button
+            type="button"
+            onClick={() => handleTabClick('saved_exams')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all font-bengali ${
+              currentTab === 'saved_exams'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <Bookmark className="w-3.5 h-3.5" />
+            <span>সংরক্ষিত {savedExamsCount > 0 ? `(${savedExamsCount})` : ''}</span>
+          </button>
+
           {hasQuestions && (
             <button
               type="button"
@@ -327,6 +363,29 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div>
               <div>প্রশ্ন আপলোড ও ক্যামেরা স্ক্যানার</div>
               <p className="text-xs text-slate-500 font-normal">টেস্ট পেপারের ছবি থেকে স্বয়ংক্রিয় প্রশ্ন রূপান্তর</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabClick('saved_exams')}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl text-left text-sm font-bold transition-colors ${
+              currentTab === 'saved_exams' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <Bookmark className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span>সংরক্ষিত কুইজসমূহ</span>
+                {savedExamsCount > 0 && (
+                  <span className="text-[10px] font-bold bg-emerald-600 text-white px-1.5 py-0.2 rounded-full">
+                    {savedExamsCount}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 font-normal">সেভ করা কুইজ লাইব্রেরি ও টেস্ট ইতিহাস</p>
             </div>
           </button>
 

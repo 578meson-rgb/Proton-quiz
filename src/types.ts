@@ -58,3 +58,15 @@ export interface ExtractionResult {
   totalQuestions: number;
   rawFeedback?: string;
 }
+
+export interface SavedExamSet {
+  id: string;
+  name: string;
+  subject: SubjectType;
+  createdAt: string;
+  updatedAt: string;
+  questions: MCQQuestion[];
+  settings: ExamSettings;
+  lastSubmission?: ExamSubmission | null;
+  description?: string;
+}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { ImageUploader } from './components/ImageUploader';
 import { QuestionReviewList } from './components/QuestionReviewList';
@@ -7,11 +7,13 @@ import { ExamResults } from './components/ExamResults';
 import { PrintableQuestionPaper } from './components/PrintableQuestionPaper';
 import { SettingsModal } from './components/SettingsModal';
 import { MobileCompanion } from './components/MobileCompanion';
-import { MCQQuestion, SubjectType, ExamSettings, ExamSubmission } from './types';
+import { SavedExamsManager } from './components/SavedExamsManager';
+import { MCQQuestion, SubjectType, ExamSettings, ExamSubmission, SavedExamSet } from './types';
 import { SAMPLE_PACKS } from './data/sampleQuestions';
+import { getSavedExams } from './utils/savedExamsStorage';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'upload' | 'review_questions' | 'cbt' | 'results' | 'print'>('upload');
+  const [currentTab, setCurrentTab] = useState<'upload' | 'review_questions' | 'cbt' | 'results' | 'print' | 'saved_exams'>('upload');
   const [questions, setQuestions] = useState<MCQQuestion[]>([]);
   const [subject, setSubject] = useState<SubjectType>('Physics');
   const [rawImage, setRawImage] = useState<string | undefined>(undefined);
@@ -28,11 +30,64 @@ export default function App() {
   });
   const [submission, setSubmission] = useState<ExamSubmission | null>(null);
 
+  // Active saved exam reference if currently loaded from or saved to storage
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [activeSavedName, setActiveSavedName] = useState<string | null>(null);
+  const [savedExamsCount, setSavedExamsCount] = useState<number>(0);
+
+  // Sync saved exams count
+  useEffect(() => {
+    const updateCount = () => {
+      setSavedExamsCount(getSavedExams().length);
+    };
+    updateCount();
+    window.addEventListener('quizify_saved_exams_updated', updateCount);
+    return () => window.removeEventListener('quizify_saved_exams_updated', updateCount);
+  }, []);
+
   // Settings & User Guide modal state
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // Global answers hidden state (default is false: hidden, per user request)
   const [showAllAnswersGlobal, setShowAllAnswersGlobal] = useState<boolean>(false);
+
+  // Load a saved exam for immediate CBT test
+  const handleLoadExamForCbt = (savedExam: SavedExamSet) => {
+    setQuestions(savedExam.questions);
+    setSubject(savedExam.subject);
+    setExamSettings(savedExam.settings);
+    setActiveSavedId(savedExam.id);
+    setActiveSavedName(savedExam.name);
+    setSubmission(null);
+    setRawImage(undefined);
+    setShowAllAnswersGlobal(false);
+    setCurrentTab('cbt');
+  };
+
+  // Load a saved exam for reviewing/editing questions
+  const handleLoadExamForReview = (savedExam: SavedExamSet) => {
+    setQuestions(savedExam.questions);
+    setSubject(savedExam.subject);
+    setExamSettings(savedExam.settings);
+    setActiveSavedId(savedExam.id);
+    setActiveSavedName(savedExam.name);
+    setSubmission(null);
+    setRawImage(undefined);
+    setShowAllAnswersGlobal(false);
+    setCurrentTab('review_questions');
+  };
+
+  // Load a saved exam for printing
+  const handleLoadExamForPrint = (savedExam: SavedExamSet) => {
+    setQuestions(savedExam.questions);
+    setSubject(savedExam.subject);
+    setExamSettings(savedExam.settings);
+    setActiveSavedId(savedExam.id);
+    setActiveSavedName(savedExam.name);
+    setSubmission(null);
+    setRawImage(undefined);
+    setCurrentTab('print');
+  };
 
   // When image OCR extraction succeeds
   const handleExtractionSuccess = (
@@ -44,6 +99,8 @@ export default function App() {
     setQuestions(extractedQuestions);
     setSubject(detectedSubject);
     setRawImage(imageSrc);
+    setActiveSavedId(null);
+    setActiveSavedName(null);
     // Answers remain hidden by default
     setShowAllAnswersGlobal(false);
     setExamSettings((prev) => ({
@@ -65,6 +122,8 @@ export default function App() {
     setQuestions(pack.questions);
     setSubject(pack.subject);
     setRawImage(undefined);
+    setActiveSavedId(null);
+    setActiveSavedName(null);
     setShowAllAnswersGlobal(false);
     setExamSettings((prev) => ({
       ...prev,
@@ -108,6 +167,8 @@ export default function App() {
       setQuestions([]);
       setSubmission(null);
       setRawImage(undefined);
+      setActiveSavedId(null);
+      setActiveSavedName(null);
       setShowAllAnswersGlobal(false);
       setCurrentTab('upload');
     }
@@ -138,6 +199,7 @@ export default function App() {
           hasQuestions={questions.length > 0}
           questionCount={questions.length}
           hasExamResults={Boolean(submission)}
+          savedExamsCount={savedExamsCount}
           onResetAll={handleResetAll}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
@@ -149,6 +211,17 @@ export default function App() {
           <ImageUploader
             onExtractionSuccess={handleExtractionSuccess}
             onSelectSamplePack={handleSelectSamplePack}
+            onSelectSavedExam={handleLoadExamForCbt}
+            onViewAllSavedExams={() => setCurrentTab('saved_exams')}
+          />
+        )}
+
+        {currentTab === 'saved_exams' && (
+          <SavedExamsManager
+            onLoadExamForCbt={handleLoadExamForCbt}
+            onLoadExamForReview={handleLoadExamForReview}
+            onLoadExamForPrint={handleLoadExamForPrint}
+            onGoToUpload={() => setCurrentTab('upload')}
           />
         )}
 
@@ -161,6 +234,12 @@ export default function App() {
             onUpdateQuestions={setQuestions}
             externalShowAnswers={showAllAnswersGlobal}
             onToggleExternalAnswers={() => setShowAllAnswersGlobal((prev) => !prev)}
+            activeSavedExamId={activeSavedId}
+            activeSavedExamName={activeSavedName}
+            onSavedSuccess={(savedId, savedName) => {
+              setActiveSavedId(savedId);
+              setActiveSavedName(savedName);
+            }}
           />
         )}
 
@@ -181,6 +260,11 @@ export default function App() {
             onRetake={handleRetake}
             onNewExam={handleResetAll}
             onOpenPrintView={() => setCurrentTab('print')}
+            activeSavedId={activeSavedId}
+            onSavedSuccess={(savedId, savedName) => {
+              setActiveSavedId(savedId);
+              setActiveSavedName(savedName);
+            }}
           />
         )}
 
@@ -193,7 +277,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Floating Companion (Active on upload, review, results, print) */}
+      {/* Mobile Floating Companion (Active on upload, review, results, print, saved) */}
       {currentTab !== 'cbt' && (
         <MobileCompanion
           currentTab={currentTab}
@@ -243,3 +327,4 @@ export default function App() {
     </div>
   );
 }
+

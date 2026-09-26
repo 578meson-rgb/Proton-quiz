@@ -15,10 +15,14 @@ import {
   ChevronUp,
   AlertTriangle,
   Send,
-  Loader2
+  Loader2,
+  Bookmark,
+  Check
 } from 'lucide-react';
-import { MCQQuestion, ExamSettings, ExamSubmission } from '../types';
+import { MCQQuestion, ExamSettings, ExamSubmission, SubjectType } from '../types';
 import { MathRenderer } from './MathRenderer';
+import { SaveExamModal } from './SaveExamModal';
+import { updateExamSubmissionHistory } from '../utils/savedExamsStorage';
 
 interface ExamResultsProps {
   questions: MCQQuestion[];
@@ -27,6 +31,8 @@ interface ExamResultsProps {
   onRetake: () => void;
   onNewExam: () => void;
   onOpenPrintView: () => void;
+  activeSavedId?: string | null;
+  onSavedSuccess?: (savedId: string, savedName: string) => void;
 }
 
 export const ExamResults: React.FC<ExamResultsProps> = ({
@@ -36,9 +42,21 @@ export const ExamResults: React.FC<ExamResultsProps> = ({
   onRetake,
   onNewExam,
   onOpenPrintView,
+  activeSavedId,
+  onSavedSuccess,
 }) => {
   const [filterType, setFilterType] = useState<'all' | 'correct' | 'wrong' | 'unanswered'>('all');
   const [expandedExplanations, setExpandedExplanations] = useState<Record<string, boolean>>({});
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState<boolean>(false);
+  const [currentSavedId, setCurrentSavedId] = useState<string | null>(activeSavedId || null);
+  const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
+
+  // Auto-record submission if already saved
+  useEffect(() => {
+    if (activeSavedId) {
+      updateExamSubmissionHistory(activeSavedId, submission);
+    }
+  }, [activeSavedId, submission]);
 
   // AI Tutor Modal state
   const [tutorQuestion, setTutorQuestion] = useState<MCQQuestion | null>(null);
@@ -207,6 +225,18 @@ export const ExamResults: React.FC<ExamResultsProps> = ({
             <span>আবার পরীক্ষা দিন</span>
           </button>
 
+          {/* Save Exam Set Button */}
+          <button
+            type="button"
+            id="btn-save-exam-results"
+            onClick={() => setIsSaveModalOpen(true)}
+            className="px-5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-sm shadow-2xs transition-colors flex items-center gap-2"
+            title="ভবিষ্যতে অনুশীলনের জন্য এই সেটটি সেভ করে রাখুন"
+          >
+            <Bookmark className={`w-4 h-4 ${currentSavedId ? 'fill-emerald-600' : ''}`} />
+            <span>{currentSavedId ? 'সংরক্ষিত (আপডেট করুন)' : 'কুইজটি সংরক্ষণ করুন'}</span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenPrintView}
@@ -224,6 +254,13 @@ export const ExamResults: React.FC<ExamResultsProps> = ({
             নতুন ছবি আপলোড করুন
           </button>
         </div>
+
+        {savedSuccessMsg && (
+          <div className="mt-4 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 animate-in fade-in max-w-md mx-auto">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{savedSuccessMsg}</span>
+          </div>
+        )}
       </div>
 
       {/* Filter Tabs */}
@@ -496,6 +533,24 @@ export const ExamResults: React.FC<ExamResultsProps> = ({
           </div>
         </div>
       )}
+
+      {/* Save Exam Modal */}
+      <SaveExamModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        questions={questions}
+        subject={questions[0]?.subject || 'Physics'}
+        settings={settings}
+        activeSavedId={currentSavedId}
+        onSavedSuccess={(savedId, savedName) => {
+          setCurrentSavedId(savedId);
+          setSavedSuccessMsg(`"${savedName}" সেটটি সফলভাবে সংরক্ষণ করা হয়েছে!`);
+          setTimeout(() => setSavedSuccessMsg(null), 4000);
+          if (onSavedSuccess) {
+            onSavedSuccess(savedId, savedName);
+          }
+        }}
+      />
     </div>
   );
 };
