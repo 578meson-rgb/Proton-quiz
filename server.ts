@@ -496,16 +496,22 @@ app.post(["/api/tutor-explain", "/tutor-explain"], async (req, res) => {
     const { question, options, selectedOption, correctOption, userQuery } = req.body;
     const ai = getGeminiClient();
 
-    const prompt = `You are a friendly, expert Bangladeshi HSC & Admission mentor (like an instructor from Udvash, Retina, or 10 Minute School).
-Explain this question clearly to the student in friendly, encouraging Bengali with step-by-step logic, formula derivation, and shortcut tips (যদি ভর্তি পরীক্ষার কোনো শর্টকাট থাকে).
+    const prompt = `You are a friendly, top-ranked Bangladeshi HSC & Admission mentor (like a lead instructor from Udvash / Retina / 10 Minute School).
+Explain this question to the student in clear, engaging Bengali with step-by-step logic, formula derivation, and admission shortcut tricks.
 
 Question: ${question}
 Options: ${JSON.stringify(options)}
 Correct Answer: ${correctOption}
 Student's Chosen Answer: ${selectedOption || "Not answered"}
-Student's Specific Question: ${userQuery || "বিস্তারিত সমাধান ও শর্টকাট ট্রিক বুঝিয়ে বলুন।"}
+Student's Specific Query: ${userQuery || "বিস্তারিত সমাধান ও শর্টকাট ট্রিক বুঝিয়ে বলুন।"}
 
-Provide the answer in clean Markdown with LaTeX math syntax $...$.`;
+Structure your response clearly with:
+1. **মূল সূত্র ও ধারণা:** (Core Formula & Concept using LaTeX $...$)
+2. **ধাপে ধাপে সহজ সমাধান:** (Step-by-step logical calculation)
+3. **⚡ ভর্তি পরীক্ষার সুপার শর্টকাট ট্রিক:** (Admission shortcut or 10-second mental math tip)
+4. **⚠️ সাধারণ ভুল ও টিপস:** (Common pitfalls, why student's chosen option was incorrect if applicable, and how to avoid trap answers in exams)
+
+Keep the tone encouraging, warm, and natural. Format all math expressions and variables using clean LaTeX $...$ or $$...$$.`;
 
     const { response } = await generateContentWithFallback(ai, {
       contents: prompt,
